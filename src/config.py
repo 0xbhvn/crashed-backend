@@ -22,7 +22,6 @@ RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', '10'))
 MAX_HISTORY_SIZE = int(os.environ.get('MAX_HISTORY_SIZE', '10'))
 
 # Logging Settings
-LOG_FILE_PATH = os.environ.get('LOG_FILE_PATH', 'logs/bc_crash_monitor.log')
 LOG_LEVEL_STR = os.environ.get('LOG_LEVEL', 'INFO')
 LOG_LEVEL = getattr(logging, LOG_LEVEL_STR)
 

@@ -26,6 +26,7 @@ import pytz
 
 # Configure logger
 logger = logging.getLogger(__name__)
+logger.setLevel(config.LOG_LEVEL)  # Respect the configured log level
 
 # Import relative modules
 
