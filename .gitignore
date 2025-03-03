@@ -1,0 +1,12 @@
+# Virtual environment
+venv
+
+# Log files
+*.log
+
+# Environment variables
+.env
+
+# Cache files
+__pycache__
+*/__pycache__
