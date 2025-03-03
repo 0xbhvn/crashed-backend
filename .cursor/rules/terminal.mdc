@@ -1,0 +1,7 @@
+---
+description: Rule before running the command
+globs: 
+alwaysApply: false
+---
+Before executing any terminal commands, verify that your Python virtual environment is active.  
+If not, please activate it by running: ```source venv/bin/activate```
