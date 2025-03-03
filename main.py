@@ -9,8 +9,9 @@ import sys
 import logging
 
 # Configure logging
+log_level = os.environ.get('LOG_LEVEL', 'INFO')
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler()
