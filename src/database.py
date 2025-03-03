@@ -21,6 +21,7 @@ from src.models import CrashGame, CrashStats
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(config.LOG_LEVEL)  # Respect the configured log level
 
 # Define timezone from configuration
 app_timezone = pytz.timezone(config.TIMEZONE)
