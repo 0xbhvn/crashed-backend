@@ -13,7 +13,6 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("logs/bc_crash_monitor.log"),
         logging.StreamHandler()
     ]
 )
@@ -100,11 +99,11 @@ def main():
             os.environ['DATABASE_ENABLED'] = str(database_ready).lower()
 
         # Import after environment is loaded
-        from src import history
+        from src.main import run_monitor
         import asyncio
 
         logger.info("Starting BC Game Crash Monitor...")
-        asyncio.run(history.main())
+        asyncio.run(run_monitor())
     except KeyboardInterrupt:
         logger.info("Monitor stopped by user.")
         sys.exit(0)
