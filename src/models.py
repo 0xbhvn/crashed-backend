@@ -30,26 +30,15 @@ class CrashGame(Base):
 
     __tablename__ = 'crash_games'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    gameId = Column(String, unique=True, name='game_id')
+    gameId = Column(String, primary_key=True, name='game_id')
     hashValue = Column(String, name='hash_value')
     crashPoint = Column(Float, name='crash_point')
     calculatedPoint = Column(Float, name='calculated_point')
 
     # Game timing information
-    endTimeUnix = Column(BigInteger, name='end_time_unix', nullable=True)
     endTime = Column(DateTime, name='end_time', nullable=True)
-    prepareTimeUnix = Column(
-        BigInteger, name='prepare_time_unix', nullable=True)
     prepareTime = Column(DateTime, name='prepare_time', nullable=True)
-    beginTimeUnix = Column(BigInteger, name='begin_time_unix', nullable=True)
     beginTime = Column(DateTime, name='begin_time', nullable=True)
-
-    # Additional fields
-    verified = Column(Boolean, default=False)
-
-    # Statistics
-    deviation = Column(Float, nullable=True)
 
     # Metadata - Using timezone from configuration
     createdAt = Column(
@@ -63,25 +52,18 @@ class CrashGame(Base):
         Index('ix_crash_games_crash_point', 'crash_point'),
         Index('ix_crash_games_begin_time', 'begin_time'),
         Index('ix_crash_games_end_time', 'end_time'),
-        Index('ix_crash_games_verified', 'verified'),
     )
 
     def to_dict(self):
         """Convert model instance to dictionary."""
         return {
-            'id': self.id,
             'gameId': self.gameId,
             'hashValue': self.hashValue,
             'crashPoint': self.crashPoint,
             'calculatedPoint': self.calculatedPoint,
-            'endTimeUnix': self.endTimeUnix,
             'endTime': self.endTime,
-            'prepareTimeUnix': self.prepareTimeUnix,
             'prepareTime': self.prepareTime,
-            'beginTimeUnix': self.beginTimeUnix,
             'beginTime': self.beginTime,
-            'verified': self.verified,
-            'deviation': self.deviation,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt
         }

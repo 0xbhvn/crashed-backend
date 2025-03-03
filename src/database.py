@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 import statistics
 import pytz
+import json
 
 from . import config
 
@@ -76,32 +77,24 @@ async def store_crash_game(
         f"Storing crash game {game_id} with crash point {crash_point}x")
 
     try:
-        # Calculate deviation between actual and calculated points
-        deviation = crash_point - calculated_point if calculated_point else None
-
         # Create game data dictionary
         game_data = {
             "gameId": game_id,
             "hashValue": hash_value,
             "crashPoint": crash_point,
             "calculatedPoint": calculated_point,
-            "verified": calculated_point == crash_point,
-            "deviation": deviation,
         }
 
         # If game detail is provided, extract timing information
         if game_detail and isinstance(game_detail, dict):
             if 'endTime' in game_detail and game_detail['endTime']:
-                game_data["endTimeUnix"] = game_detail['endTime']
                 game_data["endTime"] = unix_to_datetime(game_detail['endTime'])
 
             if 'prepareTime' in game_detail and game_detail['prepareTime']:
-                game_data["prepareTimeUnix"] = game_detail['prepareTime']
                 game_data["prepareTime"] = unix_to_datetime(
                     game_detail['prepareTime'])
 
             if 'beginTime' in game_detail and game_detail['beginTime']:
-                game_data["beginTimeUnix"] = game_detail['beginTime']
                 game_data["beginTime"] = unix_to_datetime(
                     game_detail['beginTime'])
 
@@ -123,6 +116,88 @@ async def store_crash_game(
 
     except Exception as e:
         logger.error(f"Error storing crash game: {str(e)}")
+        raise
+
+
+async def bulk_store_crash_games(games_data: List[Dict[str, Any]]) -> List[str]:
+    """Store multiple crash games in the database in a single transaction.
+
+    Args:
+        games_data: List of dictionaries with game data
+
+    Returns:
+        List of game IDs that were successfully stored
+
+    Raises:
+        Exception: If there's an error during database operation
+    """
+    if not games_data:
+        logger.debug("No games to bulk store")
+        return []
+
+    try:
+        # Prepare game data with proper timestamp conversions
+        prepared_games = []
+
+        for game_data in games_data:
+            # Extract required fields
+            game_id = game_data.get('game_id')
+            hash_value = game_data.get('hash')
+            crash_point = game_data.get('crash_point')
+            calculated_point = game_data.get('calculated_point')
+
+            # Prepare data for database
+            db_game_data = {
+                "gameId": game_id,
+                "hashValue": hash_value,
+                "crashPoint": crash_point,
+                "calculatedPoint": calculated_point,
+            }
+
+            # Extract timing info if available
+            game_detail = {}
+            if 'game_detail' in game_data and game_data['game_detail']:
+                if isinstance(game_data['game_detail'], str):
+                    game_detail = json.loads(game_data['game_detail'])
+                else:
+                    game_detail = game_data['game_detail']
+
+            # Process end time
+            if 'endTime' in game_data and game_data['endTime']:
+                db_game_data["endTime"] = unix_to_datetime(
+                    game_data['endTime'])
+            elif 'endTime' in game_detail and game_detail['endTime']:
+                db_game_data["endTime"] = unix_to_datetime(
+                    game_detail['endTime'])
+
+            # Process prepare time
+            if 'prepareTime' in game_data and game_data['prepareTime']:
+                db_game_data["prepareTime"] = unix_to_datetime(
+                    game_data['prepareTime'])
+            elif 'prepareTime' in game_detail and game_detail['prepareTime']:
+                db_game_data["prepareTime"] = unix_to_datetime(
+                    game_detail['prepareTime'])
+
+            # Process begin time
+            if 'beginTime' in game_data and game_data['beginTime']:
+                db_game_data["beginTime"] = unix_to_datetime(
+                    game_data['beginTime'])
+            elif 'beginTime' in game_detail and game_detail['beginTime']:
+                db_game_data["beginTime"] = unix_to_datetime(
+                    game_detail['beginTime'])
+
+            prepared_games.append(db_game_data)
+
+        # Get database instance
+        db = get_database()
+
+        # Use bulk insert
+        stored_game_ids = db.bulk_add_crash_games(prepared_games)
+        logger.info(f"Bulk stored {len(stored_game_ids)} crash games")
+        return stored_game_ids
+
+    except Exception as e:
+        logger.error(f"Error bulk storing crash games: {str(e)}")
         raise
 
 

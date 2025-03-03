@@ -62,39 +62,72 @@ class Database:
         """Add a new crash game to the database.
 
         Args:
-            game_data: Dictionary containing crash game data
+            game_data: Dictionary containing crash game data.
 
         Returns:
-            The created CrashGame instance
+            The newly created CrashGame instance.
+
+        Raises:
+            SQLAlchemyError: If there's an error during database operation.
         """
-        session = self.get_session()
         try:
-            # Convert Unix timestamps to datetime objects if present
-            if game_data.get('endTimeUnix'):
-                game_data['endTime'] = datetime.fromtimestamp(
-                    game_data['endTimeUnix'] / 1000, tz=app_timezone)
+            with self.get_session() as session:
+                # Create new CrashGame instance
+                new_game = CrashGame(**game_data)
 
-            if game_data.get('prepareTimeUnix'):
-                game_data['prepareTime'] = datetime.fromtimestamp(
-                    game_data['prepareTimeUnix'] / 1000, tz=app_timezone)
+                # Add to session and commit
+                session.add(new_game)
+                session.commit()
 
-            if game_data.get('beginTimeUnix'):
-                game_data['beginTime'] = datetime.fromtimestamp(
-                    game_data['beginTimeUnix'] / 1000, tz=app_timezone)
+                # Refresh to get the assigned ID
+                session.refresh(new_game)
 
-            # Create new crash game instance
-            crash_game = CrashGame(**game_data)
-            session.add(crash_game)
-            session.commit()
-            session.refresh(crash_game)
-            logger.info(f"Added crash game with ID: {crash_game.gameId}")
-            return crash_game
+                logger.debug(f"Added new crash game with ID {new_game.gameId}")
+                return new_game
         except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(f"Error adding crash game: {str(e)}")
+            logger.error(f"Database error adding crash game: {str(e)}")
             raise
-        finally:
-            session.close()
+
+    def bulk_add_crash_games(self, games_data: List[Dict[str, Any]]) -> List[str]:
+        """Add multiple crash games to the database in a single transaction.
+
+        Args:
+            games_data: List of dictionaries containing crash game data.
+
+        Returns:
+            List of game IDs that were successfully added.
+
+        Raises:
+            SQLAlchemyError: If there's an error during database operation.
+        """
+        if not games_data:
+            logger.debug("No games to bulk add")
+            return []
+
+        added_game_ids = []
+        try:
+            with self.get_session() as session:
+                # Create CrashGame instances for each game data
+                new_games = [CrashGame(**game_data)
+                             for game_data in games_data]
+
+                # Add all games to session
+                session.add_all(new_games)
+
+                # Commit the transaction
+                session.commit()
+
+                # Collect the game IDs
+                added_game_ids = [game.gameId for game in new_games]
+
+                logger.debug(f"Bulk added {len(added_game_ids)} crash games")
+                return added_game_ids
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error bulk adding crash games: {str(e)}")
+            raise
+
+        return added_game_ids
 
     def get_crash_game_by_id(self, game_id: str) -> Optional[CrashGame]:
         """Get a crash game by its game ID.
@@ -159,19 +192,6 @@ class Database:
             for key, value in update_data.items():
                 if hasattr(crash_game, key):
                     setattr(crash_game, key, value)
-
-            # Update timestamps if needed
-            if update_data.get('endTimeUnix'):
-                crash_game.endTime = datetime.fromtimestamp(
-                    update_data['endTimeUnix'] / 1000, tz=app_timezone)
-
-            if update_data.get('prepareTimeUnix'):
-                crash_game.prepareTime = datetime.fromtimestamp(
-                    update_data['prepareTimeUnix'] / 1000, tz=app_timezone)
-
-            if update_data.get('beginTimeUnix'):
-                crash_game.beginTime = datetime.fromtimestamp(
-                    update_data['beginTimeUnix'] / 1000, tz=app_timezone)
 
             session.commit()
             session.refresh(crash_game)
