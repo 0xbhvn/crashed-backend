@@ -82,9 +82,11 @@ The application consists of several main components:
 
 3. **Models** (`src/models.py`): Defines SQLAlchemy models for the database schema.
 
-4. **Main Application** (`main.py`): Entry point that sets up the environment and runs the monitor.
+4. **Catchup Module** (`src/catchup.py`): Retrieves missing games from the API and stores them in the database.
 
-5. **Setup Script** (`run.py`): Helper script for first-time setup and development environment configuration.
+5. **Main Application** (`main.py`): Entry point that sets up the environment and runs the monitor.
+
+6. **Setup Script** (`run.py`): Helper script for first-time setup and development environment configuration.
 
 ## Project Structure
 
@@ -114,6 +116,7 @@ bc-game-crash-monitor/
     ├── config.py             # Configuration management
     ├── database.py           # Database interface
     ├── history.py            # BC Game crash monitor implementation
+    ├── catchup.py            # Game history catchup implementation
     ├── main.py               # Module entry point
     ├── migrate.py            # Database migration utility
     ├── models.py             # SQLAlchemy data models
@@ -234,6 +237,9 @@ LOG_LEVEL=INFO
 DATABASE_ENABLED=true
 DATABASE_URL=postgresql://username:password@localhost:5432/bc_crash_db
 
+# Catchup Settings
+SKIP_CATCHUP=false  # Set to true to skip the catchup process on startup
+
 # Timezone Settings
 TIMEZONE=Asia/Kolkata
 ```
@@ -250,10 +256,32 @@ The application will:
 
 1. Connect to the BC Game API
 2. Initialize the database connection (if enabled)
-3. Start monitoring crash games
-4. Calculate and verify crash points
-5. Store results in the database (if enabled)
-6. Log results to console and file
+3. Run the catchup process to retrieve missing games (if enabled)
+4. Start monitoring crash games
+5. Calculate and verify crash points
+6. Store results in the database (if enabled)
+7. Log results to console and file
+
+### Catchup Process
+
+The application includes a catchup feature that runs automatically on startup to retrieve any missing games:
+
+- It always fetches up to 2000 historical games (20 pages of 100 games each)
+- Processes all available historical data from the API (minimum page size: 20)
+- Uses efficient bulk database operations to store games (50 at a time)
+- Tracks and skips duplicate games to ensure data integrity
+
+You can customize the catchup process using these environment variables:
+
+- `SKIP_CATCHUP=true` - Disable the catchup process on startup
+- `CATCHUP_MAX_PAGES=20` - Maximum number of pages to process (default: 20)
+- `CATCHUP_BATCH_SIZE=100` - Number of games per page (min: 20, max: 100)
+
+To run the catchup process manually with custom settings:
+
+```bash
+python -m src.catchup --pages 30 --batch-size 100
+```
 
 ## Output Format
 

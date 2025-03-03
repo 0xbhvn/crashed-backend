@@ -10,20 +10,15 @@ import hashlib
 import hmac
 import math
 from typing import List, Dict, Any, Callable, Awaitable, Optional
+import pytz
 
 # Import configuration from config.py
-try:
-    # When imported as part of the src package
-    from src import config
-    from src import database
-except ImportError:
-    # When run directly from the src directory
-    import config
-    import database
+from . import config
 
 
 class BCCrashMonitor:
-    def __init__(self, api_base_url=None, api_history_endpoint=None, game_url=None, salt=None, polling_interval=None):
+    def __init__(self, api_base_url=None, api_history_endpoint=None, game_url=None, salt=None,
+                 polling_interval=None, database_enabled=None, session_factory=None):
         """
         Initialize the BC Game Crash Monitor
 
@@ -33,6 +28,8 @@ class BCCrashMonitor:
             game_url: Game URL path (default from config)
             salt: Salt value for crash calculation (default from config)
             polling_interval: Interval in seconds between API polls (default from config)
+            database_enabled: Whether to store games in the database
+            session_factory: Database session factory (required if database_enabled is True)
         """
         # Use provided values or defaults from config
         self.api_base_url = api_base_url or config.API_BASE_URL
@@ -53,23 +50,32 @@ class BCCrashMonitor:
         # Set up logging
         self.setup_logging()
 
-        # Database enabled flag
-        self.database_enabled = os.getenv(
-            'DATABASE_ENABLED', 'false').lower() == 'true'
+        # Database settings
+        self.database_enabled = database_enabled if database_enabled is not None else \
+            os.getenv('DATABASE_ENABLED', 'false').lower() == 'true'
+        self.session_factory = session_factory
+
         if self.database_enabled:
-            self.logger.info("Database storage is enabled")
+            if not self.session_factory:
+                self.logger.warning(
+                    "Database is enabled but no session factory provided. Database operations will be skipped.")
+                self.database_enabled = False
+            else:
+                self.logger.info("Database storage is enabled")
         else:
             self.logger.info("Database storage is disabled")
 
     def setup_logging(self):
         """Setup logging to both console and file"""
         # Get log settings from config
-        log_file_path = config.LOG_FILE_PATH
         log_level = config.LOG_LEVEL
 
         # Create logger
         self.logger = logging.getLogger('bc_crash_monitor')
         self.logger.setLevel(log_level)
+
+        # Prevent propagation to root logger to avoid duplicate logs
+        self.logger.propagate = False
 
         # Check if handlers already exist
         if not self.logger.handlers:
@@ -77,19 +83,13 @@ class BCCrashMonitor:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(log_level)
 
-            # Create file handler
-            file_handler = logging.FileHandler(log_file_path)
-            file_handler.setLevel(log_level)
-
             # Create formatter
             formatter = logging.Formatter(
                 '%(asctime)s - %(levelname)s - %(message)s')
             console_handler.setFormatter(formatter)
-            file_handler.setFormatter(formatter)
 
-            # Add handlers to logger
+            # Add handler to logger
             self.logger.addHandler(console_handler)
-            self.logger.addHandler(file_handler)
 
     def register_game_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         """
@@ -170,9 +170,16 @@ class BCCrashMonitor:
                         response_text = await response.text()
                         response_data = json.loads(response_text)
 
-                        # Extract the game history list
+                        # Check for 'list' field in the response (new API format)
                         if response_data and response_data.get('data') and response_data['data'].get('list'):
                             game_list = response_data['data']['list']
+                            self.logger.info(
+                                f"Successfully fetched {len(game_list)} crash history records")
+                            return game_list
+
+                        # Check for 'data' field in the response (old API format)
+                        elif response_data and response_data.get('data') and response_data['data'].get('data'):
+                            game_list = response_data['data']['data']
                             self.logger.info(
                                 f"Successfully fetched {len(game_list)} crash history records")
                             return game_list
@@ -223,19 +230,26 @@ class BCCrashMonitor:
                         calculated_crash = self.calculate_crash_point(
                             seed=hash_value, salt=self.salt)
 
+                        # Get timezone from config
+                        app_timezone = pytz.timezone(config.TIMEZONE)
+
+                        # Convert Unix timestamps to datetime with proper timezone
+                        def convert_timestamp(ts):
+                            if not ts:
+                                return None
+                            # Convert milliseconds to seconds
+                            return datetime.fromtimestamp(ts / 1000, tz=app_timezone)
+
                         # Create game data dictionary
                         result = {
-                            'game_id': game_id,
-                            'hash': hash_value,
-                            'crash_point': crash_point,
-                            'calculated_point': calculated_crash,
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            # Add the original game detail
-                            'game_detail': game_detail_str,
-                            # Extract timing information
-                            'endTime': game_detail.get('endTime'),
-                            'prepareTime': game_detail.get('prepareTime'),
-                            'beginTime': game_detail.get('beginTime')
+                            'gameId': game_id,
+                            'hashValue': hash_value,
+                            'crashPoint': crash_point,
+                            'calculatedPoint': calculated_crash,
+                            # Convert Unix timestamps to datetime objects with timezone
+                            'endTime': convert_timestamp(game_detail.get('endTime')),
+                            'prepareTime': convert_timestamp(game_detail.get('prepareTime')),
+                            'beginTime': convert_timestamp(game_detail.get('beginTime'))
                         }
 
                         # Add to new results
@@ -248,108 +262,112 @@ class BCCrashMonitor:
                 self.logger.info(f"Found {len(new_results)} new crash results")
 
                 # First run, just record the latest game ID
-                if not self.last_processed_game_id:
-                    self.last_processed_game_id = new_results[0]['game_id']
+                if self.last_processed_game_id is None and new_results:
+                    self.last_processed_game_id = new_results[0]['gameId']
                     self.logger.info(
-                        f"Initialized with game ID {self.last_processed_game_id}")
+                        f"First run, setting last processed game ID to {self.last_processed_game_id}")
                     return []
 
-                # Process newest results first (they come in newest first)
+                # Process in reverse order (oldest to newest)
                 for result in reversed(new_results):
-                    game_id = result['game_id']
-                    hash_value = result['hash']
-                    crash_point = result['crash_point']
-                    calculated_crash = result['calculated_point']
-
-                    # Log the result
-                    self.logger.info(
-                        f"New crash result: Game ID {game_id}, Crash Point {crash_point}x, Hash {hash_value[:8]}...")
-
-                    # Store in memory
-                    self.latest_hashes.appendleft(result)
-
                     # Store in database if enabled
-                    if self.database_enabled:
+                    if self.database_enabled and self.session_factory:
                         try:
-                            # Store in database
-                            await database.store_crash_game(
-                                game_id=game_id,
-                                hash_value=hash_value,
-                                crash_point=crash_point,
-                                calculated_point=calculated_crash,
-                                game_detail={
-                                    'endTime': result.get('endTime'),
-                                    'prepareTime': result.get('prepareTime'),
-                                    'beginTime': result.get('beginTime')
-                                }
-                            )
+                            # Store game in database
+                            from .models import CrashGame
+
+                            with self.session_factory() as session:
+                                # Check if game already exists
+                                existing_game = session.query(CrashGame).filter(
+                                    CrashGame.gameId == result['gameId']).first()
+
+                                if not existing_game:
+                                    # Create new game object
+                                    new_game = CrashGame(**result)
+                                    session.add(new_game)
+                                    session.commit()
+                                    self.logger.debug(
+                                        f"Stored game {result['gameId']} in database")
                         except Exception as e:
                             self.logger.error(
-                                f"Error storing in database: {str(e)}")
+                                f"Error storing game in database: {e}")
 
                     # Notify callbacks
                     await self.notify_game_callbacks(result)
 
-                # Update the last processed game ID
-                self.last_processed_game_id = new_results[0]['game_id']
+                    # Add to latest hashes
+                    self.latest_hashes.append(result)
 
-                # Update daily stats if database is enabled
-                if self.database_enabled:
-                    try:
-                        await database.update_daily_stats()
-                    except Exception as e:
-                        self.logger.error(f"Error updating daily stats: {e}")
+                # Update last processed game ID
+                if new_results:
+                    self.last_processed_game_id = new_results[0]['gameId']
+                    self.logger.debug(
+                        f"Updated last processed game ID to {self.last_processed_game_id}")
 
                 return new_results
             else:
+                self.logger.debug("No new crash results found")
                 return []
+
         except Exception as e:
             self.logger.error(f"Error in poll_and_process: {e}")
             return []
 
+    async def run(self):
+        """Run the monitor loop"""
+        self.logger.info(
+            f"Starting BC Game Crash Monitor with polling interval {self.polling_interval}s")
+
+        while True:
+            try:
+                # Poll and process new games
+                await self.poll_and_process()
+
+                # Wait for the next polling interval
+                await asyncio.sleep(self.polling_interval)
+            except asyncio.CancelledError:
+                self.logger.info("Monitor loop cancelled")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in monitor loop: {e}")
+                self.logger.info(
+                    f"Retrying in {self.retry_interval} seconds...")
+                await asyncio.sleep(self.retry_interval)
+
     def get_latest_results(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Get the latest crash results from memory
+        Get the latest crash results
 
         Args:
-            limit: Maximum number of results to return
+            limit: Maximum number of results to return (None for all)
 
         Returns:
-            List of game data dictionaries
+            List of crash result dictionaries
         """
         if limit is None:
             return list(self.latest_hashes)
         else:
-            return list(self.latest_hashes)[:limit]
+            return list(self.latest_hashes)[-limit:]
 
 
 async def main():
-    """Main function for standalone operation"""
-    # Initialize database if enabled
-    if os.getenv('DATABASE_ENABLED', 'false').lower() == 'true':
-        try:
-            await database.init_database()
-            logging.info("Database initialized successfully")
-        except Exception as e:
-            logging.error(f"Error initializing database: {e}")
-            logging.warning("Continuing without database support")
-            os.environ['DATABASE_ENABLED'] = 'false'
-
-    # Create and run the monitor
+    """Main entry point when run directly"""
+    # Create monitor instance
     monitor = BCCrashMonitor()
+
+    # Register a callback to print new games
+    async def print_game(game_data):
+        print(
+            f"New game: {game_data['gameId']} - Crash point: {game_data['crashPoint']}x")
+
+    monitor.register_game_callback(print_game)
+
+    # Run the monitor
     try:
-        # Process continuously
-        while True:
-            await monitor.poll_and_process()
-            await asyncio.sleep(monitor.polling_interval)
+        await monitor.run()
     except KeyboardInterrupt:
-        monitor.logger.info("Interrupted by user, shutting down...")
-        # Close database connection if enabled
-        if os.getenv('DATABASE_ENABLED', 'false').lower() == 'true':
-            await database.close_database()
-    except Exception as e:
-        monitor.logger.error(f"Error during execution: {e}")
+        print("Monitor stopped by user")
+
 
 if __name__ == "__main__":
-    print("Starting BC Game Crash Monitor...")
     asyncio.run(main())
