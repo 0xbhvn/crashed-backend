@@ -10,7 +10,7 @@ API_BASE_URL = os.environ.get('API_BASE_URL', 'https://bc.game')
 API_HISTORY_ENDPOINT = os.environ.get(
     'API_HISTORY_ENDPOINT', '/api/game/bet/multi/history')
 GAME_URL = os.environ.get('GAME_URL', 'crash')
-PAGE_SIZE = int(os.environ.get('PAGE_SIZE', '50'))
+PAGE_SIZE = int(os.environ.get('PAGE_SIZE', '20'))
 
 # Calculation Settings
 BC_GAME_SALT = os.environ.get(
