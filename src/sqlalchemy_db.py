@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.declarative import declarative_base
 import pytz
 
-from src.models import Base, CrashGame, CrashStats
+from src.models import Base, CrashGame, CrashStats, CrashDistribution
 from . import config
 
 # Configure logging
@@ -286,6 +286,136 @@ class Database:
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Error updating or creating crash stats: {str(e)}")
+            raise
+        finally:
+            session.close()
+
+    def update_crash_distributions(self, stats_id: int, distributions: Dict[float, int]) -> List[CrashDistribution]:
+        """Update crash point distributions for a stats record.
+
+        Args:
+            stats_id: ID of the CrashStats record
+            distributions: Dictionary mapping thresholds to counts {threshold: count}
+
+        Returns:
+            List of updated/created CrashDistribution instances
+        """
+        session = self.get_session()
+        results = []
+
+        try:
+            # Verify the stats record exists
+            stats = session.query(CrashStats).filter(
+                CrashStats.id == stats_id).first()
+            if not stats:
+                logger.error(
+                    f"Cannot update distributions - stats record with ID {stats_id} not found")
+                return []
+
+            # Update or create distribution records for each threshold
+            for threshold, count in distributions.items():
+                # Find existing distribution for this threshold
+                dist = session.query(CrashDistribution).filter(
+                    CrashDistribution.stats_id == stats_id,
+                    CrashDistribution.threshold == threshold
+                ).first()
+
+                if dist:
+                    # Update existing distribution
+                    dist.count = count
+                    logger.debug(
+                        f"Updated distribution for stats_id {stats_id}, threshold {threshold}: {count}")
+                else:
+                    # Create new distribution
+                    dist = CrashDistribution(
+                        stats_id=stats_id,
+                        threshold=threshold,
+                        count=count
+                    )
+                    session.add(dist)
+                    logger.debug(
+                        f"Created distribution for stats_id {stats_id}, threshold {threshold}: {count}")
+
+                results.append(dist)
+
+            session.commit()
+            return results
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(f"Error updating crash distributions: {str(e)}")
+            raise
+        finally:
+            session.close()
+
+    def get_crash_distributions(self, stats_id: int) -> List[CrashDistribution]:
+        """Get crash point distributions for a stats record.
+
+        Args:
+            stats_id: ID of the CrashStats record
+
+        Returns:
+            List of CrashDistribution instances
+        """
+        session = self.get_session()
+
+        try:
+            distributions = session.query(CrashDistribution).filter(
+                CrashDistribution.stats_id == stats_id
+            ).order_by(CrashDistribution.threshold).all()
+
+            return distributions
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting crash distributions: {str(e)}")
+            raise
+        finally:
+            session.close()
+
+    def get_crash_distribution_by_date(self, date: datetime, time_range: str = 'daily') -> Dict[float, int]:
+        """Get crash point distributions for a specific date and time range.
+
+        Args:
+            date: The date to get distributions for
+            time_range: The time range for the stats ('daily', 'hourly', etc.)
+
+        Returns:
+            Dictionary mapping thresholds to counts {threshold: count}
+        """
+        session = self.get_session()
+        result = {}
+
+        try:
+            # First find the stats record
+            if time_range == 'hourly':
+                stats = session.query(CrashStats).filter(
+                    func.date_trunc('hour', CrashStats.date) == func.date_trunc(
+                        'hour', date),
+                    CrashStats.time_range == time_range
+                ).first()
+            else:
+                stats = session.query(CrashStats).filter(
+                    func.date(CrashStats.date) == func.date(date),
+                    CrashStats.time_range == time_range
+                ).first()
+
+            if not stats:
+                logger.debug(
+                    f"No stats found for date {date}, time_range {time_range}")
+                return {}
+
+            # Get distributions for this stats record
+            distributions = session.query(CrashDistribution).filter(
+                CrashDistribution.stats_id == stats.id
+            ).order_by(CrashDistribution.threshold).all()
+
+            # Convert to dictionary
+            for dist in distributions:
+                result[dist.threshold] = dist.count
+
+            return result
+        except SQLAlchemyError as e:
+            logger.error(
+                f"Error getting crash distributions by date: {str(e)}")
             raise
         finally:
             session.close()

@@ -268,7 +268,22 @@ async def update_daily_stats():
             }
 
             # Update or create stats with 'daily' time_range
-            db.update_or_create_crash_stats(today, stats_data, 'daily')
+            stats = db.update_or_create_crash_stats(today, stats_data, 'daily')
+
+            # Calculate crash point distributions
+            # Define the thresholds to track
+            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
+                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
+            distributions = {threshold: 0 for threshold in thresholds}
+
+            # Count games at each threshold
+            for point in crash_points:
+                for threshold in thresholds:
+                    if point >= threshold:
+                        distributions[threshold] += 1
+
+            # Update distributions in database
+            db.update_crash_distributions(stats.id, distributions)
 
             logger.debug(
                 f"Updated daily stats for {today.date()}: {games_count} games, avg={average_crash:.2f}x")
@@ -328,7 +343,23 @@ async def update_hourly_stats():
             }
 
             # Update or create stats with 'hourly' time_range
-            db.update_or_create_crash_stats(hour_start, stats_data, 'hourly')
+            stats = db.update_or_create_crash_stats(
+                hour_start, stats_data, 'hourly')
+
+            # Calculate crash point distributions
+            # Define the thresholds to track
+            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
+                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
+            distributions = {threshold: 0 for threshold in thresholds}
+
+            # Count games at each threshold
+            for point in crash_points:
+                for threshold in thresholds:
+                    if point >= threshold:
+                        distributions[threshold] += 1
+
+            # Update distributions in database
+            db.update_crash_distributions(stats.id, distributions)
 
             logger.debug(
                 f"Updated hourly stats for {hour_start}: {games_count} games, avg={average_crash:.2f}x")

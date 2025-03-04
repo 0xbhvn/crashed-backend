@@ -97,6 +97,10 @@ class CrashStats(Base):
     updatedAt = Column(DateTime, default=get_current_timezone_time,
                        onupdate=get_current_timezone_time, name='updated_at')
 
+    # Relationship to crash distributions
+    distributions = relationship(
+        "CrashDistribution", back_populates="crash_stats", cascade="all, delete-orphan")
+
     def to_dict(self):
         """Convert model instance to dictionary."""
         return {
@@ -109,6 +113,43 @@ class CrashStats(Base):
             'maxCrash': self.maxCrash,
             'minCrash': self.minCrash,
             'standardDeviation': self.standardDeviation,
+            'createdAt': self.createdAt,
+            'updatedAt': self.updatedAt
+        }
+
+
+class CrashDistribution(Base):
+    """Model representing the distribution of crash points at various thresholds."""
+
+    __tablename__ = 'crash_distributions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    stats_id = Column(Integer, ForeignKey(
+        'crash_stats.id', ondelete='CASCADE'), nullable=False)
+    # The crash point threshold (e.g., 1.0, 2.0, etc.)
+    threshold = Column(Float, nullable=False)
+    count = Column(Integer, default=0)  # Number of games at this threshold
+
+    # Relationship to crash stats
+    crash_stats = relationship("CrashStats", back_populates="distributions")
+
+    # Add a unique constraint for stats_id and threshold
+    __table_args__ = (UniqueConstraint(
+        'stats_id', 'threshold', name='_stats_threshold_uc'),)
+
+    # Metadata - Using timezone from configuration
+    createdAt = Column(
+        DateTime, default=get_current_timezone_time, name='created_at')
+    updatedAt = Column(DateTime, default=get_current_timezone_time,
+                       onupdate=get_current_timezone_time, name='updated_at')
+
+    def to_dict(self):
+        """Convert model instance to dictionary."""
+        return {
+            'id': self.id,
+            'stats_id': self.stats_id,
+            'threshold': self.threshold,
+            'count': self.count,
             'createdAt': self.createdAt,
             'updatedAt': self.updatedAt
         }
