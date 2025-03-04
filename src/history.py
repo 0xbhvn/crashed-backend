@@ -173,7 +173,7 @@ class BCCrashMonitor:
                         # Check for 'list' field in the response (new API format)
                         if response_data and response_data.get('data') and response_data['data'].get('list'):
                             game_list = response_data['data']['list']
-                            self.logger.debyg(
+                            self.logger.debug(
                                 f"Successfully fetched {len(game_list)} crash history records")
                             return game_list
 
