@@ -210,6 +210,7 @@ def process_game_data(game: Dict[str, Any]) -> Dict[str, Any]:
         'hashValue': game_detail.get('hash', ''),
         'crashPoint': crash_point,
         'calculatedPoint': crash_point,
+        'crashedFloor': int(crash_point),  # Floor value of crash point
         # Convert Unix timestamps to datetime objects with timezone
         'endTime': convert_timestamp(end_time_unix),
         'prepareTime': convert_timestamp(prepare_time_unix),
@@ -249,7 +250,7 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
         return 0
 
     logger.info(f"Latest game ID from API: {latest_id}")
-    logger.info(
+    logger.debug(
         f"Will process up to {max_pages} pages of history, {batch_size} games per page")
 
     # Track processed games
@@ -264,7 +265,7 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
                 f"No games found on page {page} or error occurred, stopping catchup")
             break
 
-        logger.info(f"Fetched {len(games)} games from page {page}")
+        logger.debug(f"Fetched {len(games)} games from page {page}")
 
         if database_enabled:
             # Process and store games
@@ -305,7 +306,7 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
                         g for g in processed_games if g['gameId'] not in existing_game_ids]
 
                     if new_games:
-                        logger.info(
+                        logger.debug(
                             f"Storing {len(new_games)} new crash games in database")
                         # Create CrashGame instances for each game data
                         new_game_objects = [
@@ -319,7 +320,7 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
 
                         games_processed += len(new_games)
                     else:
-                        logger.info(
+                        logger.debug(
                             "No new games to store (all already exist in database)")
 
                 # Update crash stats for each date

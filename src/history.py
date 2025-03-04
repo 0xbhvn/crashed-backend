@@ -246,6 +246,8 @@ class BCCrashMonitor:
                             'hashValue': hash_value,
                             'crashPoint': crash_point,
                             'calculatedPoint': calculated_crash,
+                            # Floor value of crash point
+                            'crashedFloor': int(crash_point),
                             # Convert Unix timestamps to datetime objects with timezone
                             'endTime': convert_timestamp(game_detail.get('endTime')),
                             'prepareTime': convert_timestamp(game_detail.get('prepareTime')),
