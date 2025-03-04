@@ -24,8 +24,6 @@ MAX_HISTORY_SIZE = int(os.environ.get('MAX_HISTORY_SIZE', '10'))
 # Logging Settings
 LOG_LEVEL_STR = os.environ.get('LOG_LEVEL', 'INFO')
 LOG_LEVEL = getattr(logging, LOG_LEVEL_STR)
-VERBOSE_LOGGING = os.environ.get(
-    'VERBOSE_LOGGING', 'false').lower() in ('true', 'yes', '1', 't')
 
 # Database Settings
 DATABASE_ENABLED = os.environ.get(

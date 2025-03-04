@@ -148,8 +148,7 @@ class BCCrashMonitor:
 
     async def fetch_crash_history(self):
         """Fetch crash game history directly from the BC Game API using the exact curl parameters"""
-        if config.VERBOSE_LOGGING:
-            self.logger.info("Fetching crash history from API...")
+        self.logger.debug("Fetching crash history from API...")
 
         # Get API settings from config
         url = f"{self.api_base_url}{self.api_history_endpoint}"
@@ -174,17 +173,15 @@ class BCCrashMonitor:
                         # Check for 'list' field in the response (new API format)
                         if response_data and response_data.get('data') and response_data['data'].get('list'):
                             game_list = response_data['data']['list']
-                            if config.VERBOSE_LOGGING:
-                                self.logger.info(
-                                    f"Successfully fetched {len(game_list)} crash history records")
+                            self.logger.debyg(
+                                f"Successfully fetched {len(game_list)} crash history records")
                             return game_list
 
                         # Check for 'data' field in the response (old API format)
                         elif response_data and response_data.get('data') and response_data['data'].get('data'):
                             game_list = response_data['data']['data']
-                            if config.VERBOSE_LOGGING:
-                                self.logger.info(
-                                    f"Successfully fetched {len(game_list)} crash history records")
+                            self.logger.debug(
+                                f"Successfully fetched {len(game_list)} crash history records")
                             return game_list
                         else:
                             self.logger.error(
