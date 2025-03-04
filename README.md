@@ -13,7 +13,7 @@ A Python application for monitoring BC Game's crash game, calculating crash valu
 
 ## Project Structure
 
-```
+```text
 src/
 ├── __init__.py        # Package initialization
 ├── __main__.py        # Entry point when run as a module
@@ -35,19 +35,22 @@ src/
 ## Installation
 
 1. Clone the repository:
-   ```
+
+   ```bash
    git clone https://github.com/yourusername/bc-game-crash-monitor.git
    cd bc-game-crash-monitor
    ```
 
 2. Create a virtual environment and activate it:
-   ```
+
+   ```bash
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. Install the dependencies:
-   ```
+
+   ```bash
    pip install -r requirements.txt
    ```
 
@@ -58,27 +61,33 @@ src/
 The application can be configured using environment variables:
 
 ### API Settings
-- `API_BASE_URL`: Base URL for the BC Game API (default: 'https://bc.game')
+
+- `API_BASE_URL`: Base URL for the BC Game API (default: '<https://bc.game>')
 - `API_HISTORY_ENDPOINT`: API endpoint for crash history (default: '/api/crash/games/history')
 - `GAME_URL`: Game URL path (default: '/game/crash')
 - `PAGE_SIZE`: Number of games per page in API requests (default: 50)
 
 ### Calculation Settings
+
 - `BC_GAME_SALT`: Salt value for crash calculation (required for accurate calculations)
 
 ### Monitoring Settings
+
 - `POLL_INTERVAL`: Interval in seconds between API polls (default: 5)
 - `RETRY_INTERVAL`: Retry interval in seconds after errors (default: 10)
 - `MAX_HISTORY_SIZE`: Maximum number of games to keep in memory (default: 1000)
 
 ### Logging Settings
+
 - `LOG_LEVEL`: Logging level (default: 'INFO')
 
 ### Database Settings
+
 - `DATABASE_ENABLED`: Whether to store games in the database (default: true)
 - `DATABASE_URL`: Database connection URL (default: 'postgresql://postgres:postgres@localhost:5432/bc_crash_db')
 
 ### Catchup Settings
+
 - `CATCHUP_ENABLED`: Whether to run catchup on startup (default: true)
 - `CATCHUP_PAGES`: Number of pages to fetch during catchup (default: 20)
 - `CATCHUP_BATCH_SIZE`: Batch size for concurrent requests during catchup (default: 20)
@@ -87,7 +96,7 @@ The application can be configured using environment variables:
 
 ### Running the Monitor
 
-```
+```bash
 # Run with default settings
 python -m src
 
@@ -119,12 +128,14 @@ python -m src catchup --pages 50 --batch-size 10
 1. Clone the repository
 2. Create a virtual environment
 3. Install development dependencies:
-   ```
+
+   ```bash
    pip install -r requirements-dev.txt
    ```
 
 4. Set up pre-commit hooks:
-   ```
+
+   ```bash
    pre-commit install
    ```
 
