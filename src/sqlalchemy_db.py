@@ -245,7 +245,7 @@ class Database:
                 for key, value in stats_data.items():
                     if hasattr(stats, key):
                         setattr(stats, key, value)
-                logger.info(f"Updated crash stats for date: {date}")
+                logger.debug(f"Updated crash stats for date: {date}")
             else:
                 # Create new stats
                 stats_data['date'] = date
