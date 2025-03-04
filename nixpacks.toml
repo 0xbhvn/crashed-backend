@@ -5,4 +5,5 @@ nixPkgs = ["python3", "postgresql_16.dev", "gcc"]
 cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt"]
 
 [start]
-cmd = "python -m src" 
+# Run migrations and then start the application
+cmd = "sh -c 'python -m src migrate upgrade head && python -m src'" 
