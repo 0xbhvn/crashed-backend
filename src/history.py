@@ -28,52 +28,50 @@ from .db import get_database, CrashGame
 
 class BCCrashMonitor:
     def __init__(self, api_base_url=None, api_history_endpoint=None, game_url=None, salt=None,
-                 polling_interval=None, database_enabled=None, db_engine=None):
+                 polling_interval=None, database_enabled=None, db_engine=None, verbose_logging=False):
         """
-        Initialize the BC Game Crash Monitor
+        Initialize the BC Crash Monitor.
 
         Args:
-            api_base_url: Base URL for the BC Game API (default from config)
-            api_history_endpoint: API endpoint for crash history (default from config)
-            game_url: Game URL path (default from config)
-            salt: Salt value for crash calculation (default from config)
-            polling_interval: Interval in seconds between API polls (default from config)
-            database_enabled: Whether to store games in the database
-            db_engine: Database engine (required if database_enabled is True)
+            api_base_url (str, optional): Base URL for the API. Defaults to config.API_BASE_URL.
+            api_history_endpoint (str, optional): Endpoint for game history. Defaults to config.API_HISTORY_ENDPOINT.
+            game_url (str, optional): Game URL path. Defaults to config.GAME_URL.
+            salt (str, optional): Salt for crash point calculation. Defaults to config.BC_GAME_SALT.
+            polling_interval (int, optional): Interval between API polls in seconds. Defaults to config.POLL_INTERVAL.
+            database_enabled (bool, optional): Whether to store results in database. Defaults to config.DATABASE_ENABLED.
+            db_engine: SQLAlchemy engine instance for database operations.
+            verbose_logging (bool, optional): Whether to log detailed game results. Defaults to False.
         """
-        # Use provided values or defaults from config
+        # API configuration
         self.api_base_url = api_base_url or config.API_BASE_URL
         self.api_history_endpoint = api_history_endpoint or config.API_HISTORY_ENDPOINT
         self.game_url = game_url or config.GAME_URL
         self.salt = salt or config.BC_GAME_SALT
-        self.polling_interval = polling_interval or config.POLL_INTERVAL
-        self.retry_interval = config.RETRY_INTERVAL
 
-        # Get max history size from config
+        # Polling configuration
+        self.polling_interval = polling_interval or config.POLL_INTERVAL
+
+        # Store latest hashes to avoid duplicates
         self.latest_hashes = deque(maxlen=config.MAX_HISTORY_SIZE)
         self.last_processed_game_id = None
 
-        # Set up callbacks for game events
+        # Game callbacks
         self.game_callbacks: List[Callable[[
             Dict[str, Any]], Awaitable[None]]] = []
 
-        # Set up logging
-        self.logger = configure_logging('bc_crash_monitor', config.LOG_LEVEL)
-
-        # Database settings
+        # Database configuration
         self.database_enabled = database_enabled if database_enabled is not None else config.DATABASE_ENABLED
         self.db = None
+        if self.database_enabled and db_engine:
+            from src.db.engine import get_database
+            self.db = get_database(db_engine)
 
-        if self.database_enabled:
-            if db_engine:
-                self.db = get_database(db_engine)
-                self.logger.info("Database storage is enabled")
-            else:
-                self.logger.warning(
-                    "Database is enabled but no engine provided. Database operations will be skipped.")
-                self.database_enabled = False
-        else:
-            self.logger.info("Database storage is disabled")
+        # Logging
+        self.logger = logging.getLogger("bc_crash_monitor")
+        self.verbose_logging = verbose_logging
+
+        self.logger.info(
+            f"Database storage is {'enabled' if self.database_enabled else 'disabled'}")
 
     def register_game_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         """
@@ -237,30 +235,33 @@ class BCCrashMonitor:
                             with self.db.get_session() as session:
                                 # Check if game already exists
                                 existing_game = session.query(CrashGame).filter(
-                                    CrashGame.gameId == result['gameId']).first()
+                                    CrashGame.gameId == result['gameId']
+                                ).first()
 
                                 if not existing_game:
                                     # Create new game object
                                     new_game = CrashGame(**result)
                                     session.add(new_game)
                                     session.commit()
-                                    self.logger.debug(
-                                        f"Stored game #{result['gameId']} with crash point {result['crashPoint']}x in database")
                         except Exception as e:
                             self.logger.error(
                                 f"Error storing game in database: {e}")
 
+                    # Update last processed ID
+                    self.last_processed_game_id = result['gameId']
+
                     # Notify callbacks
                     await self.notify_game_callbacks(result)
 
-                    # Add to latest hashes
-                    self.latest_hashes.append(result)
+                    # Log for single game results only if verbose logging is enabled
+                    if self.verbose_logging and len(new_results) == 1:
+                        self.logger.info(
+                            f"Found 1 new crash result: Game #{result['gameId']} with crash point {result['crashPoint']}x")
 
-                # Update last processed game ID
-                if new_results:
-                    self.last_processed_game_id = new_results[0]['gameId']
-                    self.logger.debug(
-                        f"Updated last processed game ID to {self.last_processed_game_id}")
+                # Log the overview only if verbose logging is enabled
+                if self.verbose_logging and len(new_results) > 1:
+                    self.logger.info(
+                        f"Found {len(new_results)} new crash results")
 
                 return new_results
             else:
