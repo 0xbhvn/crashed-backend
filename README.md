@@ -1,317 +1,137 @@
 # BC Game Crash Monitor
 
-A Python application that monitors BC Game's crash game and calculates crash values in real-time.
+A Python application for monitoring BC Game's crash game, calculating crash values, and storing results in a database.
 
 ## Features
 
-- Real-time monitoring of BC Game crash games
-- Verification of crash points using HMAC-SHA256 algorithm
-- Logging of game results to console and file
-- Database integration for storing game results and statistics
-- Resilient design with automatic reconnection and error handling
+- Real-time monitoring of BC Game crash results
+- Historical data catchup functionality
+- Crash point calculation and verification
+- Database storage of game results
+- Configurable logging and monitoring settings
+- Command-line interface for different operations
 
-## Requirements
+## Project Structure
 
-- Python 3.11 or higher
-- PostgreSQL database
-- Internet connection to access BC Game API
-
-### Dependencies
-
-The application uses the following key dependencies:
-
-- aiohttp 3.11.13 - For asynchronous HTTP requests
-- SQLAlchemy 2.0.28 - ORM for database operations
-- psycopg2-binary 2.9.10 - PostgreSQL adapter
-- python-dotenv 1.0.1 - Environment variable management
-- alembic 1.14.1 - Database migration tool
-
-For a complete list, see `requirements.txt`.
+```
+src/
+├── __init__.py        # Package initialization
+├── __main__.py        # Entry point when run as a module
+├── app.py             # Main application entry point
+├── config.py          # Configuration settings
+├── history.py         # Crash monitor implementation
+├── db/                # Database module
+│   ├── __init__.py    # Database module initialization
+│   ├── engine.py      # Database engine and connection
+│   ├── models.py      # SQLAlchemy models
+│   └── operations.py  # Database operations
+└── utils/             # Utility modules
+    ├── __init__.py    # Utility module initialization
+    ├── api.py         # API interaction utilities
+    ├── env.py         # Environment variable utilities
+    └── logging.py     # Logging utilities
+```
 
 ## Installation
 
-1. Clone this repository:
-
-   ```bash
-   git clone https://github.com/yourusername/bc-crash-monitor.git
-   cd bc-crash-monitor
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/bc-game-crash-monitor.git
+   cd bc-game-crash-monitor
    ```
 
-2. Create and activate a virtual environment:
-
-   ```bash
+2. Create a virtual environment and activate it:
+   ```
    python -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
-3. Install dependencies:
-
-   ```bash
+3. Install the dependencies:
+   ```
    pip install -r requirements.txt
    ```
 
-4. Install the package in development mode:
-
-   ```bash
-   pip install -e .
-   ```
-
-5. Create a `.env` file based on `.env.example`:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-6. Edit the `.env` file with your configuration settings.
-
-7. Run the application:
-
-   ```bash
-   python main.py
-   ```
-
-   The database tables will be created automatically on first run.
-
-## Architecture
-
-The application consists of several main components:
-
-1. **BC Crash Monitor** (`src/history.py`): Core component that polls the BC Game API for crash results and processes them in real-time.
-
-2. **Database Module** (`src/sqlalchemy_db.py`): Handles database operations using SQLAlchemy, including storing crash games.
-
-3. **Models** (`src/models.py`): Defines SQLAlchemy models for the database schema.
-
-4. **Catchup Module** (`src/catchup.py`): Retrieves missing games from the API and stores them in the database.
-
-5. **Main Application** (`main.py`): Entry point that sets up the environment and runs the monitor.
-
-6. **Setup Script** (`run.py`): Helper script for first-time setup and development environment configuration.
-
-## Project Structure
-
-```text
-bc-game-crash-monitor/
-├── .env                      # Environment variables (not in repository)
-├── .env.example              # Example environment configuration
-├── README.md                 # Project documentation
-├── requirements.txt          # Core production dependencies
-├── dev-requirements.txt      # Development dependencies
-├── setup.py                  # Package installation configuration
-├── alembic.ini               # Alembic migration configuration
-├── main.py                   # Application entry point
-├── run.py                    # Development environment setup script
-├── docs/                     # Documentation
-│   └── database_migrations.md # Guide for database schema migrations
-├── logs/                     # Log files (generated at runtime)
-├── migrations/               # Database migration files
-│   ├── env.py                # Alembic environment configuration
-│   └── versions/             # Migration version scripts
-│       └── fec343f2d3f9_init.py # Initial migration
-├── prisma/                   # Prisma schema (legacy, SQLAlchemy is now used)
-│   └── schema.prisma         # Prisma database schema
-└── src/                      # Source code
-    ├── __init__.py           # Package initialization
-    ├── __main__.py           # Package entry point
-    ├── config.py             # Configuration management
-    ├── database.py           # Database interface
-    ├── history.py            # BC Game crash monitor implementation
-    ├── catchup.py            # Game history catchup implementation
-    ├── main.py               # Module entry point
-    ├── migrate.py            # Database migration utility
-    ├── models.py             # SQLAlchemy data models
-    └── sqlalchemy_db.py      # SQLAlchemy database implementation
-```
-
-## Database Integration
-
-The application uses SQLAlchemy ORM for database operations, providing:
-
-- Type-safe database access
-- Automatic schema migration
-- Efficient database queries
-- Object-oriented data access
-
-The database schema includes:
-
-- **crash_games**: Stores individual game results
-  - game_id: Unique identifier for the game
-  - hash_value: The hash value from the game
-  - crash_point: The actual crash point from BC Game
-  - calculated_point: Our calculated crash point for verification
-  - verified: Whether our calculation matches the actual result
-  - deviation: The difference between actual and calculated points
-  - end_time_unix: Unix timestamp when the game ended (in milliseconds)
-  - end_time: End time converted to datetime (in IST timezone UTC+5:30)
-  - prepare_time_unix: Unix timestamp when the game started preparing (in milliseconds)
-  - prepare_time: Prepare time converted to datetime (in IST timezone UTC+5:30)
-  - begin_time_unix: Unix timestamp when the game began (in milliseconds)
-  - begin_time: Begin time converted to datetime (in IST timezone UTC+5:30)
-
-### Timezone Handling
-
-All timestamp fields in the database (end_time, prepare_time, begin_time) are stored in the configured timezone, which defaults to IST (UTC+5:30, Asia/Kolkata) but can be changed via the `TIMEZONE` environment variable. This helps with:
-
-- Easier analysis of crash data according to your local business hours
-- Simplified reporting and monitoring for users in the configured timezone
-- Consistent timestamp format throughout the application
-
-The timezone can be configured in the `.env` file using the standard IANA timezone database name format:
-
-```bash
-# Examples
-TIMEZONE=Asia/Kolkata  # Indian Standard Time (UTC+5:30)
-TIMEZONE=America/New_York  # Eastern Time
-TIMEZONE=Europe/London  # Greenwich Mean Time/British Summer Time
-TIMEZONE=Asia/Tokyo  # Japan Standard Time
-```
-
-The conversion from Unix timestamps to timezone-aware datetime objects is handled automatically by the application using the `pytz` library.
-
-### Database Schema Migrations
-
-When you need to change the database schema (add columns, change data types, etc.):
-
-1. Update the SQLAlchemy models in `src/models.py`
-2. Use one of these methods to update the database:
-
-   a. **Using Alembic (recommended)**:
-
-      ```bash
-      # Create a migration
-      alembic revision --autogenerate -m "Description of changes"
-      
-      # Apply the migration
-      alembic upgrade head
-      ```
-
-   b. **Manual SQL** (for simple changes):
-
-      ```bash
-      # Connect to the database
-      psql your_connection_string
-      
-      # Make changes with SQL
-      ALTER TABLE crash_games ADD COLUMN new_column TEXT;
-      ```
-
-For more details, see [Database Migration Guide](docs/database_migrations.md).
+4. Set up environment variables (see Configuration section)
 
 ## Configuration
 
-The application is configured through environment variables, which can be set in the `.env` file:
+The application can be configured using environment variables:
 
-```bash
-# API Settings
-API_BASE_URL=https://bc.game
-API_HISTORY_ENDPOINT=/api/game/bet/multi/history
-GAME_URL=crash
-PAGE_SIZE=50
+### API Settings
+- `API_BASE_URL`: Base URL for the BC Game API (default: 'https://bc.game')
+- `API_HISTORY_ENDPOINT`: API endpoint for crash history (default: '/api/crash/games/history')
+- `GAME_URL`: Game URL path (default: '/game/crash')
+- `PAGE_SIZE`: Number of games per page in API requests (default: 50)
 
-# Calculation Settings
-BC_GAME_SALT=0000000000000000000301e2801a9a9598bfb114e574a91a887f2132f33047e6
+### Calculation Settings
+- `BC_GAME_SALT`: Salt value for crash calculation (required for accurate calculations)
 
-# Monitoring Settings
-POLL_INTERVAL=5
-RETRY_INTERVAL=10
-MAX_HISTORY_SIZE=10
+### Monitoring Settings
+- `POLL_INTERVAL`: Interval in seconds between API polls (default: 5)
+- `RETRY_INTERVAL`: Retry interval in seconds after errors (default: 10)
+- `MAX_HISTORY_SIZE`: Maximum number of games to keep in memory (default: 1000)
 
-# Logging Settings
-LOG_FILE_PATH=logs/bc_crash_monitor.log
-LOG_LEVEL=INFO
+### Logging Settings
+- `LOG_LEVEL`: Logging level (default: 'INFO')
 
-# Database Settings
-DATABASE_ENABLED=true
-DATABASE_URL=postgresql://username:password@localhost:5432/bc_crash_db
+### Database Settings
+- `DATABASE_ENABLED`: Whether to store games in the database (default: true)
+- `DATABASE_URL`: Database connection URL (default: 'postgresql://postgres:postgres@localhost:5432/bc_crash_db')
 
-# Catchup Settings
-SKIP_CATCHUP=false  # Set to true to skip the catchup process on startup
-
-# Timezone Settings
-TIMEZONE=Asia/Kolkata
-```
+### Catchup Settings
+- `CATCHUP_ENABLED`: Whether to run catchup on startup (default: true)
+- `CATCHUP_PAGES`: Number of pages to fetch during catchup (default: 20)
+- `CATCHUP_BATCH_SIZE`: Batch size for concurrent requests during catchup (default: 20)
 
 ## Usage
 
-Run the application with:
+### Running the Monitor
 
-```bash
-python main.py
+```
+# Run with default settings
+python -m src
+
+# Run with specific command
+python -m src monitor --skip-catchup
+
+# Run catchup only
+python -m src catchup --pages 50 --batch-size 10
 ```
 
-The application will:
+### Command-line Arguments
 
-1. Connect to the BC Game API
-2. Initialize the database connection (if enabled)
-3. Run the catchup process to retrieve missing games (if enabled)
-4. Start monitoring crash games
-5. Calculate and verify crash points
-6. Store results in the database (if enabled)
-7. Log results to console and file
+- `monitor`: Run the crash monitor (default command)
+  - `--skip-catchup`: Skip the initial catchup process
 
-### Catchup Process
+- `catchup`: Run only the historical data catchup
+  - `--pages`: Number of pages to fetch (default: from config)
+  - `--batch-size`: Batch size for concurrent requests (default: from config)
 
-The application includes a catchup feature that runs automatically on startup to retrieve any missing games:
+## Development
 
-- It always fetches up to 2000 historical games (20 pages of 100 games each)
-- Processes all available historical data from the API (minimum page size: 20)
-- Uses efficient bulk database operations to store games (50 at a time)
-- Tracks and skips duplicate games to ensure data integrity
+### Requirements
 
-You can customize the catchup process using these environment variables:
+- Python 3.8+
+- PostgreSQL (if database storage is enabled)
 
-- `SKIP_CATCHUP=true` - Disable the catchup process on startup
-- `CATCHUP_MAX_PAGES=20` - Maximum number of pages to process (default: 20)
-- `CATCHUP_BATCH_SIZE=100` - Number of games per page (min: 20, max: 100)
+### Setting up a Development Environment
 
-To run the catchup process manually with custom settings:
+1. Clone the repository
+2. Create a virtual environment
+3. Install development dependencies:
+   ```
+   pip install -r requirements-dev.txt
+   ```
 
-```bash
-python -m src.catchup --pages 30 --batch-size 100
-```
-
-## Output Format
-
-The application logs each crash game with the following information:
-
-```bash
-New crash result: Game ID 7911249, Crash Point 1.9x, Hash 4c5cb893...
-```
-
-## How Crash Point Calculation Works
-
-BC Game uses a provably fair algorithm based on HMAC-SHA256 to determine crash points:
-
-1. Each game has a unique hash value
-2. The hash is combined with a salt value using HMAC-SHA256
-3. The first 13 characters of the resulting hash are converted to a number between 0 and 1
-4. The crash point is calculated using the formula: `99 / (1 - X)`
-5. The result is floored and divided by 100, with a minimum of 1.00
-
-This application implements this algorithm to verify that the crash points reported by BC Game are accurate.
-
-## Database Management
-
-The application uses SQLAlchemy to manage the database schema and operations. The tables are created automatically when the application is run for the first time.
-
-If you need to work with the database directly:
-
-```python
-from src.sqlalchemy_db import get_database
-from src.models import CrashGame
-
-# Get database instance
-db = get_database()
-
-# Query data using a session
-with db.get_session() as session:
-    recent_games = session.query(CrashGame).order_by(CrashGame.id.desc()).limit(10).all()
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+4. Set up pre-commit hooks:
+   ```
+   pre-commit install
+   ```
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Disclaimer
+
+This project is not affiliated with BC Game. It is a third-party tool for educational purposes only. Use at your own risk.
