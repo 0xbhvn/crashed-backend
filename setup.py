@@ -10,12 +10,12 @@ with open("requirements.txt", "r", encoding="utf-8") as f:
 setup(
     name="bc-game-crash-monitor",
     version="0.2.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Bhaven",
+    author_email="thisisbhaven@gmail.com",
     description="A Python application for monitoring BC Game's crash game",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/bc-game-crash-monitor",
+    url="https://github.com/0xbhvn/bc-game-crash-monitor",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
