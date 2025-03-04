@@ -4,14 +4,18 @@ Script to update crashed_floor values for existing records.
 This sets the floor value of each crash point for all existing records.
 """
 
-from src.models import CrashGame
 from src.sqlalchemy_db import get_database
+from src.models import CrashGame
 import os
 import sys
 import logging
 from sqlalchemy import update
 from sqlalchemy.sql import func
 import asyncio
+
+# Add the project root to the Python path
+project_root = os.path.abspath(os.path.dirname(__file__))
+sys.path.insert(0, project_root)
 
 # Configure logging
 logging.basicConfig(

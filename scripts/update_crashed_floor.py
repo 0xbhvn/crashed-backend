@@ -4,20 +4,18 @@ Script to update crashed_floor values for existing records.
 This sets the floor value of each crash point for all existing records.
 """
 
-from src.models import CrashGame
 from src.sqlalchemy_db import get_database
+from src.models import CrashGame
 import os
 import sys
 import logging
 from sqlalchemy import update
 from sqlalchemy.sql import func
+import asyncio
 
 # Add the project root to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, project_root)
-print(f"Added {project_root} to Python path")
-
-# Import project modules
 
 # Configure logging
 logging.basicConfig(
@@ -26,8 +24,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger('update_crashed_floor')
 
+# Import our modules
 
-def update_crashed_floor():
+
+async def update_crashed_floor():
     """Update crashed_floor for all existing records."""
     logger.info("Starting update of crashed_floor values for existing records")
 
@@ -41,6 +41,10 @@ def update_crashed_floor():
         # Count records before update
         total_records = session.query(CrashGame).count()
         logger.info(f"Total records to update: {total_records}")
+
+        if total_records == 0:
+            logger.info("No records found to update.")
+            return
 
         # Update records in chunks to avoid memory issues
         chunk_size = 1000
@@ -80,6 +84,6 @@ def update_crashed_floor():
         if session:
             session.close()
 
-
 if __name__ == "__main__":
-    update_crashed_floor()
+    # Run the async function
+    asyncio.run(update_crashed_floor())
