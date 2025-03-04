@@ -64,15 +64,15 @@ def reorder_crash_stats_ids(dry_run=False):
         session.execute(text("""
             CREATE TABLE crash_stats_reordered (
                 id SERIAL PRIMARY KEY,
-                date TIMESTAMP WITH TIME ZONE NOT NULL,
+                date TIMESTAMP NOT NULL,
                 games_count INTEGER NOT NULL,
                 average_crash FLOAT NOT NULL,
                 median_crash FLOAT NOT NULL,
                 min_crash FLOAT NOT NULL,
                 max_crash FLOAT NOT NULL,
                 standard_deviation FLOAT NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
                 time_range VARCHAR(10) DEFAULT 'daily' NOT NULL
             )
         """))
