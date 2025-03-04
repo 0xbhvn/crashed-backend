@@ -150,7 +150,7 @@ The database schema includes:
 
 ### Timezone Handling
 
-All timestamp fields in the database (end_time, prepare_time, begin_time, created_at, updated_at) are stored in the configured timezone, which defaults to IST (UTC+5:30, Asia/Kolkata) but can be changed via the `TIMEZONE` environment variable. This helps with:
+All timestamp fields in the database (end_time, prepare_time, begin_time) are stored in the configured timezone, which defaults to IST (UTC+5:30, Asia/Kolkata) but can be changed via the `TIMEZONE` environment variable. This helps with:
 
 - Easier analysis of crash data according to your local business hours
 - Simplified reporting and monitoring for users in the configured timezone

@@ -42,15 +42,8 @@ class CrashGame(Base):
     prepareTime = Column(DateTime, name='prepare_time', nullable=True)
     beginTime = Column(DateTime, name='begin_time', nullable=True)
 
-    # Metadata - Using timezone from configuration
-    createdAt = Column(
-        DateTime, default=get_current_timezone_time, name='created_at')
-    updatedAt = Column(DateTime, default=get_current_timezone_time,
-                       onupdate=get_current_timezone_time, name='updated_at')
-
     # Add indexes for commonly queried fields
     __table_args__ = (
-        Index('ix_crash_games_created_at', 'created_at'),
         Index('ix_crash_games_crash_point', 'crash_point'),
         Index('ix_crash_games_begin_time', 'begin_time'),
         Index('ix_crash_games_end_time', 'end_time'),
@@ -66,7 +59,5 @@ class CrashGame(Base):
             'crashedFloor': self.crashedFloor,
             'endTime': self.endTime,
             'prepareTime': self.prepareTime,
-            'beginTime': self.beginTime,
-            'createdAt': self.createdAt,
-            'updatedAt': self.updatedAt
+            'beginTime': self.beginTime
         }

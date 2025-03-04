@@ -106,11 +106,11 @@ class Database:
                         start_date: Optional[datetime] = None,
                         end_date: Optional[datetime] = None) -> List[CrashGame]:
         """
-        Get crash games from the database.
+        Get crash games with pagination and optional date filtering.
 
         Args:
             limit (int, optional): Maximum number of games to return. Defaults to 100.
-            offset (int, optional): Number of games to skip. Defaults to 0.
+            offset (int, optional): Offset for pagination. Defaults to 0.
             start_date (datetime, optional): Start date for filtering. Defaults to None.
             end_date (datetime, optional): End date for filtering. Defaults to None.
 
@@ -123,12 +123,12 @@ class Database:
 
             # Apply date filters if provided
             if start_date:
-                query = query.filter(CrashGame.created_at >= start_date)
+                query = query.filter(CrashGame.beginTime >= start_date)
             if end_date:
-                query = query.filter(CrashGame.created_at <= end_date)
+                query = query.filter(CrashGame.beginTime <= end_date)
 
             # Apply limit and offset and get results
-            query = query.order_by(CrashGame.created_at.desc()).limit(
+            query = query.order_by(CrashGame.beginTime.desc()).limit(
                 limit).offset(offset)
             return query.all()
         except SQLAlchemyError as e:
@@ -170,13 +170,13 @@ class Database:
         """
         session = self.get_session()
         try:
-            query = session.query(func.count(CrashGame.id))
+            query = session.query(func.count(CrashGame.gameId))
 
             # Apply date filters if provided
             if start_date:
-                query = query.filter(CrashGame.created_at >= start_date)
+                query = query.filter(CrashGame.beginTime >= start_date)
             if end_date:
-                query = query.filter(CrashGame.created_at <= end_date)
+                query = query.filter(CrashGame.beginTime <= end_date)
 
             return query.scalar()
         except SQLAlchemyError as e:
@@ -194,7 +194,7 @@ class Database:
         """
         session = self.get_session()
         try:
-            return session.query(CrashGame).order_by(CrashGame.created_at.desc()).first()
+            return session.query(CrashGame).order_by(CrashGame.beginTime.desc()).first()
         except SQLAlchemyError as e:
             logger.error(f"Error getting last crash game: {str(e)}")
             raise

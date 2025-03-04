@@ -218,8 +218,7 @@ def process_game_data(game: Dict[str, Any]) -> Dict[str, Any]:
         # Convert Unix timestamps to datetime objects with timezone
         'endTime': convert_timestamp(end_time_unix),
         'prepareTime': convert_timestamp(prepare_time_unix),
-        'beginTime': convert_timestamp(begin_time_unix),
-        'createdAt': datetime.now(timezone.utc)
+        'beginTime': convert_timestamp(begin_time_unix)
     }
 
     return result
