@@ -371,8 +371,22 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
 
                             # Update or create stats
                             db = database.get_database()
-                            db.update_or_create_crash_stats(
+                            stats = db.update_or_create_crash_stats(
                                 date_obj, stats_data, 'daily')
+
+                            # Calculate and store crash distributions
+                            distributions = {}
+                            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
+                                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
+                            for threshold in thresholds:
+                                count = sum(
+                                    1 for cp in crash_points if cp >= threshold)
+                                if count > 0:
+                                    distributions[threshold] = count
+
+                            # Update distributions in the database
+                            db.update_crash_distributions(
+                                stats.id, distributions)
 
                             logger.debug(
                                 f"Updated daily stats for {date}: {games_count} games, avg={average_crash:.2f}x")
@@ -450,11 +464,23 @@ async def update_hourly_stats_for_date(date, session_factory):
 
                 # Update or create hourly stats
                 db = database.get_database()
-                db.update_or_create_crash_stats(
+                stats = db.update_or_create_crash_stats(
                     hour_start, stats_data, 'hourly')
 
+                # Calculate crash point distributions
+                distributions = {}
+                thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
+                              30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
+                for threshold in thresholds:
+                    count = sum(1 for cp in crash_points if cp >= threshold)
+                    if count > 0:
+                        distributions[threshold] = count
+
+                # Update distributions in the database
+                db.update_crash_distributions(stats.id, distributions)
+
                 logger.debug(
-                    f"Updated hourly stats for {hour_start.strftime('%Y-%m-%d %H:00')}: {games_count} games, avg={average_crash:.2f}x")
+                    f"Updated hourly stats for {hour_start}: {games_count} games, avg={average_crash:.2f}x")
             finally:
                 session.close()
     except Exception as e:
