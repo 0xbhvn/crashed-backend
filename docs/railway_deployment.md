@@ -61,4 +61,4 @@ python -m src migrate upgrade head
 
 - You can view application logs in the Railway dashboard
 - To update your application, simply push changes to your GitHub repository
-- To backup your database, use the Railway CLI or dashboard 
+- To backup your database, use the Railway CLI or dashboard
