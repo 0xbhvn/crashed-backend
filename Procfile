@@ -1,1 +1,1 @@
-web: sh -c 'python -m src migrate upgrade head && python -m src' 
+web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor' 
