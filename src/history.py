@@ -308,8 +308,10 @@ class BCCrashMonitor:
                                     try:
                                         self.logger.debug(
                                             f"Updating statistics after storing game #{result['gameId']}")
-                                        from .database import update_daily_stats
+                                        from .database import update_daily_stats, update_hourly_stats
+                                        # Update both daily and hourly stats
                                         await update_daily_stats()
+                                        await update_hourly_stats()
                                         self.logger.debug(
                                             f"Statistics updated after game #{result['gameId']}")
                                     except Exception as e:
