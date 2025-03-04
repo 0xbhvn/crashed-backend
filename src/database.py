@@ -8,8 +8,7 @@ It uses SQLAlchemy ORM for database interactions through the sqlalchemy_db modul
 import os
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone, timedelta
-import statistics
+from datetime import datetime
 import pytz
 import json
 
@@ -17,7 +16,7 @@ from . import config
 
 # Import our SQLAlchemy database module
 from src.sqlalchemy_db import get_database
-from src.models import CrashGame, CrashStats
+from src.models import CrashGame
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -226,180 +225,3 @@ async def get_game_by_id(game_id: str) -> Optional[CrashGame]:
     except Exception as e:
         logger.error(f"Error getting game by ID: {str(e)}")
         return None
-
-
-async def update_daily_stats():
-    """Update daily stats for crash games"""
-    logger.debug("Updating daily stats")
-
-    try:
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        db = get_database()
-
-        # Get games from today using a session
-        session = db.get_session()
-        try:
-            games = session.query(CrashGame).filter(
-                CrashGame.beginTime.isnot(None),
-                CrashGame.beginTime >= today
-            ).all()
-
-            if not games:
-                logger.debug("No games found for today, skipping stats update")
-                return
-
-            # Calculate stats
-            crash_points = [game.crashPoint for game in games]
-            games_count = len(crash_points)
-            average_crash = sum(crash_points) / games_count
-            median_crash = statistics.median(crash_points)
-            max_crash = max(crash_points)
-            min_crash = min(crash_points)
-            std_dev = statistics.stdev(crash_points) if games_count > 1 else 0
-
-            # Create stats data dictionary
-            stats_data = {
-                "gamesCount": games_count,
-                "averageCrash": average_crash,
-                "medianCrash": median_crash,
-                "maxCrash": max_crash,
-                "minCrash": min_crash,
-                "standardDeviation": std_dev
-            }
-
-            # Update or create stats with 'daily' time_range
-            stats = db.update_or_create_crash_stats(today, stats_data, 'daily')
-
-            # Calculate crash point distributions
-            # Define the thresholds to track
-            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
-                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
-            distributions = {threshold: 0 for threshold in thresholds}
-
-            # Count games at each threshold
-            for point in crash_points:
-                for threshold in thresholds:
-                    if point >= threshold:
-                        distributions[threshold] += 1
-
-            # Update distributions in database
-            db.update_crash_distributions(stats.id, distributions)
-
-            logger.debug(
-                f"Updated daily stats for {today.date()}: {games_count} games, avg={average_crash:.2f}x")
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.error(f"Error updating daily stats: {str(e)}")
-
-
-async def update_hourly_stats():
-    """Update hourly stats for crash games"""
-    logger.debug("Updating hourly stats")
-
-    try:
-        # Get the current hour
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
-
-        # Hour start and end times
-        hour_start = current_hour
-        hour_end = current_hour + timedelta(hours=1)
-
-        db = get_database()
-
-        # Get games from the current hour using a session
-        session = db.get_session()
-        try:
-            games = session.query(CrashGame).filter(
-                CrashGame.beginTime.isnot(None),
-                CrashGame.beginTime >= hour_start,
-                CrashGame.beginTime < hour_end
-            ).all()
-
-            if not games:
-                logger.debug(
-                    f"No games found for hour starting at {hour_start}, skipping stats update")
-                return
-
-            # Calculate stats
-            crash_points = [game.crashPoint for game in games]
-            games_count = len(crash_points)
-            average_crash = sum(crash_points) / games_count
-            median_crash = statistics.median(crash_points)
-            max_crash = max(crash_points)
-            min_crash = min(crash_points)
-            std_dev = statistics.stdev(crash_points) if games_count > 1 else 0
-
-            # Create stats data dictionary
-            stats_data = {
-                "gamesCount": games_count,
-                "averageCrash": average_crash,
-                "medianCrash": median_crash,
-                "maxCrash": max_crash,
-                "minCrash": min_crash,
-                "standardDeviation": std_dev
-            }
-
-            # Update or create stats with 'hourly' time_range
-            stats = db.update_or_create_crash_stats(
-                hour_start, stats_data, 'hourly')
-
-            # Calculate crash point distributions
-            # Define the thresholds to track
-            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
-                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
-            distributions = {threshold: 0 for threshold in thresholds}
-
-            # Count games at each threshold
-            for point in crash_points:
-                for threshold in thresholds:
-                    if point >= threshold:
-                        distributions[threshold] += 1
-
-            # Update distributions in database
-            db.update_crash_distributions(stats.id, distributions)
-
-            logger.debug(
-                f"Updated hourly stats for {hour_start}: {games_count} games, avg={average_crash:.2f}x")
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.error(f"Error updating hourly stats: {str(e)}")
-
-
-def get_crash_stats_for_range(start_date: datetime, end_date: datetime = None, time_range: str = 'daily') -> List[Dict[str, Any]]:
-    """Get crash statistics for a date range with the specified time_range.
-
-    Args:
-        start_date: The start date of the range
-        end_date: The end date of the range (defaults to current time if None)
-        time_range: The time range type ('daily' or 'hourly')
-
-    Returns:
-        List of crash stats dictionaries
-    """
-    logger.debug(
-        f"Getting {time_range} crash stats from {start_date} to {end_date or 'now'}")
-
-    if end_date is None:
-        end_date = datetime.now()
-
-    db = get_database()
-    session = db.get_session()
-    try:
-        stats_query = session.query(CrashStats).filter(
-            CrashStats.date >= start_date,
-            CrashStats.date <= end_date,
-            CrashStats.time_range == time_range
-        ).order_by(CrashStats.date)
-
-        stats_list = stats_query.all()
-        return [stat.to_dict() for stat in stats_list]
-    except Exception as e:
-        logger.error(f"Error getting {time_range} crash stats: {str(e)}")
-        return []
-    finally:
-        session.close()
