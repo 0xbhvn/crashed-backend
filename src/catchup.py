@@ -286,8 +286,8 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
                 processed_games.append(processed_game)
 
                 # Track date for stats updates
-                if processed_game['createdAt']:
-                    dates.add(processed_game['createdAt'].date())
+                if processed_game['beginTime']:
+                    dates.add(processed_game['beginTime'].date())
 
             if processed_games:
                 # Store games in database
