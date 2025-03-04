@@ -67,19 +67,23 @@ def parse_arguments():
 
     # Upgrade command
     upgrade_parser = migrate_subparsers.add_parser(
-        "upgrade", help="Upgrade the database")
+        "upgrade", help="Upgrade to a later version")
     upgrade_parser.add_argument(
         "--revision",
+        type=str,
         default="head",
-        help="Revision to upgrade to (default: head)")
+        help="Revision to upgrade to (default: head)"
+    )
 
     # Downgrade command
     downgrade_parser = migrate_subparsers.add_parser(
-        "downgrade", help="Downgrade the database")
+        "downgrade", help="Revert to a previous version")
     downgrade_parser.add_argument(
         "--revision",
+        type=str,
         default="-1",
-        help="Revision to downgrade to (default: -1)")
+        help="Revision to downgrade to (default: -1)"
+    )
 
     # History command
     migrate_subparsers.add_parser(
@@ -112,7 +116,11 @@ async def run_monitor(skip_catchup: bool = False) -> None:
 
     # Create monitor instance
     monitor = BCCrashMonitor(
-        database_enabled=config.DATABASE_ENABLED, db_engine=db_engine)
+        database_enabled=config.DATABASE_ENABLED,
+        db_engine=db_engine,
+        # Disable verbose logging in the monitor since we'll log in the callback
+        verbose_logging=False
+    )
 
     # Run catchup process if enabled
     if not skip_catchup and config.CATCHUP_ENABLED:
@@ -126,8 +134,10 @@ async def run_monitor(skip_catchup: bool = False) -> None:
 
     # Register a callback to print new games
     async def log_game(game_data: Dict[str, Any]) -> None:
+        """Log new game data when received from the monitor"""
         logger.info(
-            f"New game: {game_data['gameId']} - Crash point: {game_data['crashPoint']}x"
+            f"New crash game detected: Game #{game_data['gameId']} crashed at {game_data['crashPoint']}x " +
+            f"(calculated: {game_data.get('calculatedPoint', 'N/A')}x)"
         )
 
     monitor.register_game_callback(log_game)
@@ -268,6 +278,10 @@ async def main() -> None:
 
     # Load environment variables
     load_env()
+
+    # Reload configuration from environment variables
+    from src.config import reload_config
+    reload_config()
 
     # Configure logging
     logger = configure_logging("app", config.LOG_LEVEL)
