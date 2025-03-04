@@ -34,6 +34,8 @@ class CrashGame(Base):
     hashValue = Column(String, name='hash_value')
     crashPoint = Column(Float, name='crash_point')
     calculatedPoint = Column(Float, name='calculated_point')
+    crashedFloor = Column(Integer, name='crashed_floor',
+                          nullable=True)  # Floored value of crash point
 
     # Game timing information
     endTime = Column(DateTime, name='end_time', nullable=True)
@@ -61,6 +63,7 @@ class CrashGame(Base):
             'hashValue': self.hashValue,
             'crashPoint': self.crashPoint,
             'calculatedPoint': self.calculatedPoint,
+            'crashedFloor': self.crashedFloor,
             'endTime': self.endTime,
             'prepareTime': self.prepareTime,
             'beginTime': self.beginTime,
