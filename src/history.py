@@ -262,15 +262,7 @@ class BCCrashMonitor:
 
             # Process results in reverse order (oldest to newest)
             if new_results:
-                if len(new_results) == 1:
-                    # For a single result, include game_id and crash point
-                    game = new_results[0]
-                    self.logger.info(
-                        f"Found 1 new crash result: Game #{game['gameId']} with crash point {game['crashPoint']}x")
-                else:
-                    # For multiple results, just show the count
-                    self.logger.info(
-                        f"Found {len(new_results)} new crash results")
+                self.logger.info(f"Found {len(new_results)} new crash results")
 
                 # First run, just record the latest game ID
                 if self.last_processed_game_id is None and new_results:
