@@ -270,7 +270,7 @@ async def update_daily_stats():
             # Update or create stats
             db.update_or_create_crash_stats(today, stats_data)
 
-            logger.info(
+            logger.debug(
                 f"Updated stats for {today.date()}: {games_count} games, avg={average_crash:.2f}x")
         finally:
             session.close()

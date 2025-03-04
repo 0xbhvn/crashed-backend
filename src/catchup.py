@@ -13,6 +13,7 @@ This will run when the application starts or can be executed manually.
 from .sqlalchemy_db import Database
 from .models import CrashGame
 from . import config
+from . import database
 import logging
 import json
 import asyncio
@@ -23,6 +24,8 @@ import argparse
 import os
 from datetime import datetime, timezone
 import pytz
+import statistics
+from sqlalchemy import func
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -327,8 +330,55 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
                 if dates:
                     for date in dates:
                         logger.debug(f"Updating crash stats for date: {date}")
-                        # Stats update logic would go here
-                        # This would typically calculate daily statistics for the games
+                        # Call the update_daily_stats function for the specific date
+                        try:
+                            # Create a datetime object with the date components
+                            date_obj = datetime(
+                                date.year, date.month, date.day)
+                            # Fetch games for this date
+                            session = session_factory()
+                            games = session.query(CrashGame).filter(
+                                CrashGame.beginTime.isnot(None),
+                                func.date(CrashGame.beginTime) == date
+                            ).all()
+
+                            if not games:
+                                logger.debug(
+                                    f"No games found for date {date}, skipping stats update")
+                                continue
+
+                            # Calculate stats
+                            crash_points = [game.crashPoint for game in games]
+                            games_count = len(crash_points)
+                            average_crash = sum(crash_points) / games_count
+                            median_crash = statistics.median(crash_points)
+                            max_crash = max(crash_points)
+                            min_crash = min(crash_points)
+                            std_dev = statistics.stdev(
+                                crash_points) if games_count > 1 else 0
+
+                            # Create stats data dictionary
+                            stats_data = {
+                                "gamesCount": games_count,
+                                "averageCrash": average_crash,
+                                "medianCrash": median_crash,
+                                "maxCrash": max_crash,
+                                "minCrash": min_crash,
+                                "standardDeviation": std_dev
+                            }
+
+                            # Update or create stats
+                            db = database.get_database()
+                            db.update_or_create_crash_stats(
+                                date_obj, stats_data)
+
+                            logger.debug(
+                                f"Updated stats for {date}: {games_count} games, avg={average_crash:.2f}x")
+                        except Exception as e:
+                            logger.error(
+                                f"Error updating stats for date {date}: {str(e)}")
+                        finally:
+                            session.close()
         else:
             # If database is disabled, just count the games
             games_processed += len(games)
