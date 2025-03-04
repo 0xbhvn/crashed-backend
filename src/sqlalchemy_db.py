@@ -162,7 +162,7 @@ class Database:
         session = self.get_session()
         try:
             crash_games = session.query(CrashGame).order_by(
-                desc(CrashGame.createdAt)).limit(limit).all()
+                desc(CrashGame.gameId)).limit(limit).all()
             return crash_games
         except SQLAlchemyError as e:
             logger.error(f"Error getting latest crash games: {str(e)}")
