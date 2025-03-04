@@ -22,9 +22,8 @@ from typing import List, Dict, Any, Optional
 import sys
 import argparse
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import pytz
-import statistics
 from sqlalchemy import func
 from src.models import CrashGame
 from src.sqlalchemy_db import Database, get_database
@@ -276,7 +275,6 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
             # Process and store games
             processed_games = []
             game_ids = set()  # Track game IDs for duplicate detection
-            dates = set()  # Track dates for stats updates
 
             for game in games:
                 # Process the game data
@@ -290,10 +288,6 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
 
                 game_ids.add(game_id)
                 processed_games.append(processed_game)
-
-                # Track date for stats updates
-                if processed_game['beginTime']:
-                    dates.add(processed_game['beginTime'].date())
 
             if processed_games:
                 # Store games in database
@@ -327,77 +321,6 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
                     else:
                         logger.debug(
                             "No new games to store (all already exist in database)")
-
-                # Update crash stats for each date
-                if dates:
-                    for date in dates:
-                        logger.debug(f"Updating crash stats for date: {date}")
-                        # Call the update_daily_stats function for the specific date
-                        try:
-                            # Create a datetime object with the date components
-                            date_obj = datetime(
-                                date.year, date.month, date.day)
-                            # Fetch games for this date
-                            session = session_factory()
-                            games = session.query(CrashGame).filter(
-                                CrashGame.beginTime.isnot(None),
-                                func.date(CrashGame.beginTime) == date
-                            ).all()
-
-                            if not games:
-                                logger.debug(
-                                    f"No games found for date {date}, skipping stats update")
-                                continue
-
-                            # Calculate stats
-                            crash_points = [game.crashPoint for game in games]
-                            games_count = len(crash_points)
-                            average_crash = sum(crash_points) / games_count
-                            median_crash = statistics.median(crash_points)
-                            max_crash = max(crash_points)
-                            min_crash = min(crash_points)
-                            std_dev = statistics.stdev(
-                                crash_points) if games_count > 1 else 0
-
-                            # Create stats data dictionary
-                            stats_data = {
-                                "gamesCount": games_count,
-                                "averageCrash": average_crash,
-                                "medianCrash": median_crash,
-                                "maxCrash": max_crash,
-                                "minCrash": min_crash,
-                                "standardDeviation": std_dev
-                            }
-
-                            # Update or create stats
-                            db = database.get_database()
-                            stats = db.update_or_create_crash_stats(
-                                date_obj, stats_data, 'daily')
-
-                            # Calculate and store crash distributions
-                            distributions = {}
-                            thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
-                                          30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
-                            for threshold in thresholds:
-                                count = sum(
-                                    1 for cp in crash_points if cp >= threshold)
-                                if count > 0:
-                                    distributions[threshold] = count
-
-                            # Update distributions in the database
-                            db.update_crash_distributions(
-                                stats.id, distributions)
-
-                            logger.debug(
-                                f"Updated daily stats for {date}: {games_count} games, avg={average_crash:.2f}x")
-
-                            # Also update hourly stats for this date
-                            await update_hourly_stats_for_date(date, session_factory)
-                        except Exception as e:
-                            logger.error(
-                                f"Error updating stats for date {date}: {str(e)}")
-                        finally:
-                            session.close()
         else:
             # If database is disabled, just count the games
             games_processed += len(games)
@@ -405,86 +328,6 @@ async def run_catchup(database_enabled: bool = True, session_factory=None,
     logger.info(
         f"Catchup process complete - processed {games_processed} games")
     return games_processed
-
-
-async def update_hourly_stats_for_date(date, session_factory):
-    """Update hourly stats for a specific date"""
-    logger.debug(f"Updating hourly stats for date: {date}")
-
-    try:
-        # Create start and end datetime for the day
-        # Use app timezone from config
-        app_timezone = pytz.timezone(config.TIMEZONE)
-
-        # Create timezone-aware start of day
-        start_of_day = datetime(date.year, date.month, date.day, 0, 0, 0)
-        if not hasattr(start_of_day, 'tzinfo') or start_of_day.tzinfo is None:
-            start_of_day = app_timezone.localize(start_of_day)
-
-        end_of_day = start_of_day + timedelta(days=1)
-
-        # Process each hour of the day
-        for hour in range(24):
-            hour_start = start_of_day + timedelta(hours=hour)
-            hour_end = hour_start + timedelta(hours=1)
-
-            session = session_factory()
-            try:
-                # Fetch games for this hour
-                games = session.query(CrashGame).filter(
-                    CrashGame.beginTime.isnot(None),
-                    CrashGame.beginTime >= hour_start,
-                    CrashGame.beginTime < hour_end
-                ).all()
-
-                if not games:
-                    logger.debug(
-                        f"No games found for hour starting at {hour_start}, skipping stats update")
-                    continue
-
-                # Calculate stats
-                crash_points = [game.crashPoint for game in games]
-                games_count = len(crash_points)
-                average_crash = sum(crash_points) / games_count
-                median_crash = statistics.median(crash_points)
-                max_crash = max(crash_points)
-                min_crash = min(crash_points)
-                std_dev = statistics.stdev(
-                    crash_points) if games_count > 1 else 0
-
-                # Create stats data dictionary
-                stats_data = {
-                    "gamesCount": games_count,
-                    "averageCrash": average_crash,
-                    "medianCrash": median_crash,
-                    "maxCrash": max_crash,
-                    "minCrash": min_crash,
-                    "standardDeviation": std_dev
-                }
-
-                # Update or create hourly stats
-                db = database.get_database()
-                stats = db.update_or_create_crash_stats(
-                    hour_start, stats_data, 'hourly')
-
-                # Calculate crash point distributions
-                distributions = {}
-                thresholds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20,
-                              30, 40, 50, 75, 100, 150, 200, 250, 500, 750, 1000]
-                for threshold in thresholds:
-                    count = sum(1 for cp in crash_points if cp >= threshold)
-                    if count > 0:
-                        distributions[threshold] = count
-
-                # Update distributions in the database
-                db.update_crash_distributions(stats.id, distributions)
-
-                logger.debug(
-                    f"Updated hourly stats for {hour_start}: {games_count} games, avg={average_crash:.2f}x")
-            finally:
-                session.close()
-    except Exception as e:
-        logger.error(f"Error updating hourly stats for date {date}: {str(e)}")
 
 
 async def main():
@@ -505,12 +348,6 @@ async def main():
                         help='Number of games per page (min: 20, max: 100, default: 20)')
     parser.add_argument('--no-database', action='store_true',
                         help='Disable database storage')
-    parser.add_argument('--start-date', type=str,
-                        help='Start date in YYYY-MM-DD format for updating stats (defaults to none)')
-    parser.add_argument('--end-date', type=str,
-                        help='End date in YYYY-MM-DD format for updating stats (defaults to today)')
-    parser.add_argument('--stats-only', action='store_true',
-                        help='Only update statistics for the date range, do not fetch new games')
     args = parser.parse_args()
 
     # Run catchup process
@@ -531,83 +368,13 @@ async def main():
             # Initialize database if needed
             db.create_tables()
 
-            # If stats-only mode and date range provided
-            if args.stats_only and args.start_date:
-                try:
-                    # Parse dates
-                    start_date = datetime.strptime(
-                        args.start_date, '%Y-%m-%d').date()
-
-                    if args.end_date:
-                        end_date = datetime.strptime(
-                            args.end_date, '%Y-%m-%d').date()
-                    else:
-                        end_date = datetime.now().date()
-
-                    # Update stats for each date in range
-                    current_date = start_date
-                    while current_date <= end_date:
-                        logger.info(f"Updating stats for date: {current_date}")
-                        session = db.get_session()
-                        try:
-                            # Get games for this date
-                            games = session.query(CrashGame).filter(
-                                CrashGame.beginTime.isnot(None),
-                                func.date(CrashGame.beginTime) == current_date
-                            ).all()
-
-                            if games:
-                                # Calculate daily stats
-                                crash_points = [
-                                    game.crashPoint for game in games]
-                                games_count = len(crash_points)
-                                average_crash = sum(crash_points) / games_count
-                                median_crash = statistics.median(crash_points)
-                                max_crash = max(crash_points)
-                                min_crash = min(crash_points)
-                                std_dev = statistics.stdev(
-                                    crash_points) if games_count > 1 else 0
-
-                                # Create stats data dictionary
-                                stats_data = {
-                                    "gamesCount": games_count,
-                                    "averageCrash": average_crash,
-                                    "medianCrash": median_crash,
-                                    "maxCrash": max_crash,
-                                    "minCrash": min_crash,
-                                    "standardDeviation": std_dev
-                                }
-
-                                # Update or create daily stats
-                                date_obj = datetime(
-                                    current_date.year, current_date.month, current_date.day)
-                                db.update_or_create_crash_stats(
-                                    date_obj, stats_data, 'daily')
-                                logger.info(
-                                    f"Updated daily stats for {current_date}: {games_count} games, avg={average_crash:.2f}x")
-
-                                # Update hourly stats
-                                await update_hourly_stats_for_date(current_date, db.get_session)
-                            else:
-                                logger.warning(
-                                    f"No games found for date {current_date}, skipping stats update")
-                        finally:
-                            session.close()
-
-                        current_date += timedelta(days=1)
-
-                    logger.info(
-                        f"Stats update complete for date range {start_date} to {end_date}")
-                except ValueError as e:
-                    logger.error(f"Invalid date format: {e}")
-            else:
-                # Run normal catchup
-                await run_catchup(
-                    database_enabled=True,
-                    session_factory=db.get_session,
-                    max_pages=args.pages,
-                    batch_size=args.batch_size
-                )
+            # Run normal catchup
+            await run_catchup(
+                database_enabled=True,
+                session_factory=db.get_session,
+                max_pages=args.pages,
+                batch_size=args.batch_size
+            )
         finally:
             # No need to explicitly close with SQLAlchemy - engine disposal happens automatically
             pass

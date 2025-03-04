@@ -39,11 +39,6 @@ class BCCrashMonitor:
         self.polling_interval = polling_interval or config.POLL_INTERVAL
         self.retry_interval = config.RETRY_INTERVAL
 
-        # Add stats update interval (default to 15 minutes)
-        self.stats_update_interval = int(
-            os.environ.get('STATS_UPDATE_INTERVAL', 900))
-        self.last_stats_update = None
-
         # Get max history size from config
         self.latest_hashes = deque(maxlen=config.MAX_HISTORY_SIZE)
         self.last_processed_game_id = None
@@ -303,20 +298,6 @@ class BCCrashMonitor:
                                     session.commit()
                                     self.logger.debug(
                                         f"Stored game #{result['gameId']} with crash point {result['crashPoint']}x in database")
-
-                                    # Update statistics after each new game is stored
-                                    try:
-                                        self.logger.debug(
-                                            f"Updating statistics after storing game #{result['gameId']}")
-                                        from .database import update_daily_stats, update_hourly_stats
-                                        # Update both daily and hourly stats
-                                        await update_daily_stats()
-                                        await update_hourly_stats()
-                                        self.logger.debug(
-                                            f"Statistics updated after game #{result['gameId']}")
-                                    except Exception as e:
-                                        self.logger.error(
-                                            f"Error updating statistics after storing game: {e}")
                         except Exception as e:
                             self.logger.error(
                                 f"Error storing game in database: {e}")
@@ -346,7 +327,6 @@ class BCCrashMonitor:
         """Run the monitor loop"""
         self.logger.info(
             f"Starting BC Game Crash Monitor with polling interval {self.polling_interval}s")
-        self.logger.info("Stats will be updated after each new game")
 
         while True:
             try:
