@@ -11,6 +11,14 @@ from alembic import context
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+# Import environment loader
+try:
+    from src.utils import load_env
+    # Load environment variables from .env file
+    load_env()
+except ImportError:
+    print("Warning: src.utils.load_env not found. Environment variables may not be properly loaded.")
+
 # Import the application's models
 
 # this is the Alembic Config object, which provides
@@ -20,6 +28,9 @@ config = context.config
 # Load the database URL from environment if available
 if os.getenv('DATABASE_URL'):
     config.set_main_option('sqlalchemy.url', os.getenv('DATABASE_URL'))
+else:
+    print("Warning: DATABASE_URL environment variable not found.")
+    print("Migrations will use the placeholder URL from alembic.ini, which may not work.")
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

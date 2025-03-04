@@ -139,6 +139,27 @@ python -m src catchup --pages 50 --batch-size 10
    pre-commit install
    ```
 
+## Security Best Practices
+
+This project follows these security best practices:
+
+1. **Environment Variables**: All sensitive information (database credentials, API keys, etc.) should be stored in environment variables using a `.env` file. Never hardcode credentials in the codebase.
+
+2. **Configuration Files**: Configuration files like `alembic.ini` use placeholders instead of actual credentials. Real credentials are loaded from environment variables.
+
+3. **Git Security**:
+   - The `.env` file is added to `.gitignore` to prevent accidental credential commits
+   - Use `.env.example` as a template with dummy values for required variables
+
+4. **Database Security**:
+   - Connection strings should never be stored in code or configuration files
+   - Use parameterized queries to prevent SQL injection
+   - Implement proper access controls for database users
+
+5. **Logs**: Ensure logs don't contain sensitive information like passwords or tokens
+
+If you discover any security vulnerabilities in this project, please report them responsibly.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
