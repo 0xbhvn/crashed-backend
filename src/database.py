@@ -240,7 +240,8 @@ async def update_daily_stats():
         session = db.get_session()
         try:
             games = session.query(CrashGame).filter(
-                CrashGame.createdAt >= today
+                CrashGame.beginTime.isnot(None),
+                CrashGame.beginTime >= today
             ).all()
 
             if not games:
