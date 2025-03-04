@@ -217,9 +217,19 @@ class Database:
         """
         session = self.get_session()
         try:
-            stats = session.query(CrashStats).filter(
-                func.date(CrashStats.date) == func.date(date),
-                CrashStats.time_range == time_range).first()
+            # Use different comparison logic based on time_range
+            if time_range == 'hourly':
+                # For hourly stats, compare the exact date including hour
+                # Use date_trunc to ensure we're comparing at the hour level
+                stats = session.query(CrashStats).filter(
+                    func.date_trunc('hour', CrashStats.date) == func.date_trunc(
+                        'hour', date),
+                    CrashStats.time_range == time_range).first()
+            else:
+                # For daily or other stats, compare at the date level
+                stats = session.query(CrashStats).filter(
+                    func.date(CrashStats.date) == func.date(date),
+                    CrashStats.time_range == time_range).first()
             return stats
         except SQLAlchemyError as e:
             logger.error(f"Error getting crash stats: {str(e)}")
@@ -240,9 +250,19 @@ class Database:
         """
         session = self.get_session()
         try:
-            stats = session.query(CrashStats).filter(
-                func.date(CrashStats.date) == func.date(date),
-                CrashStats.time_range == time_range).first()
+            # Use different comparison logic based on time_range
+            if time_range == 'hourly':
+                # For hourly stats, compare the exact date including hour
+                # Use date_trunc to ensure we're comparing at the hour level
+                stats = session.query(CrashStats).filter(
+                    func.date_trunc('hour', CrashStats.date) == func.date_trunc(
+                        'hour', date),
+                    CrashStats.time_range == time_range).first()
+            else:
+                # For daily or other stats, compare at the date level
+                stats = session.query(CrashStats).filter(
+                    func.date(CrashStats.date) == func.date(date),
+                    CrashStats.time_range == time_range).first()
 
             if stats:
                 # Update existing stats
