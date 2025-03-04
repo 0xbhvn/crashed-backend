@@ -78,13 +78,18 @@ class CrashStats(Base):
     __tablename__ = 'crash_stats'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(DateTime, unique=True)
+    date = Column(DateTime)
+    time_range = Column(String(20), default='daily')  # 'daily', 'hourly', etc.
     gamesCount = Column(Integer, name='games_count')
     averageCrash = Column(Float, name='average_crash')
     medianCrash = Column(Float, name='median_crash')
     maxCrash = Column(Float, name='max_crash')
     minCrash = Column(Float, name='min_crash')
     standardDeviation = Column(Float, name='standard_deviation')
+
+    # Add a unique constraint for both date and time_range
+    __table_args__ = (UniqueConstraint(
+        'date', 'time_range', name='_date_timerange_uc'),)
 
     # Metadata - Using timezone from configuration
     createdAt = Column(
@@ -97,6 +102,7 @@ class CrashStats(Base):
         return {
             'id': self.id,
             'date': self.date,
+            'time_range': self.time_range,
             'gamesCount': self.gamesCount,
             'averageCrash': self.averageCrash,
             'medianCrash': self.medianCrash,

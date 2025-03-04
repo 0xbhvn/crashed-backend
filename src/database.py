@@ -267,13 +267,108 @@ async def update_daily_stats():
                 "standardDeviation": std_dev
             }
 
-            # Update or create stats
-            db.update_or_create_crash_stats(today, stats_data)
+            # Update or create stats with 'daily' time_range
+            db.update_or_create_crash_stats(today, stats_data, 'daily')
 
             logger.debug(
-                f"Updated stats for {today.date()}: {games_count} games, avg={average_crash:.2f}x")
+                f"Updated daily stats for {today.date()}: {games_count} games, avg={average_crash:.2f}x")
         finally:
             session.close()
 
     except Exception as e:
         logger.error(f"Error updating daily stats: {str(e)}")
+
+
+async def update_hourly_stats():
+    """Update hourly stats for crash games"""
+    logger.debug("Updating hourly stats")
+
+    try:
+        # Get the current hour
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+        # Hour start and end times
+        hour_start = current_hour
+        hour_end = current_hour + timedelta(hours=1)
+
+        db = get_database()
+
+        # Get games from the current hour using a session
+        session = db.get_session()
+        try:
+            games = session.query(CrashGame).filter(
+                CrashGame.beginTime.isnot(None),
+                CrashGame.beginTime >= hour_start,
+                CrashGame.beginTime < hour_end
+            ).all()
+
+            if not games:
+                logger.debug(
+                    f"No games found for hour starting at {hour_start}, skipping stats update")
+                return
+
+            # Calculate stats
+            crash_points = [game.crashPoint for game in games]
+            games_count = len(crash_points)
+            average_crash = sum(crash_points) / games_count
+            median_crash = statistics.median(crash_points)
+            max_crash = max(crash_points)
+            min_crash = min(crash_points)
+            std_dev = statistics.stdev(crash_points) if games_count > 1 else 0
+
+            # Create stats data dictionary
+            stats_data = {
+                "gamesCount": games_count,
+                "averageCrash": average_crash,
+                "medianCrash": median_crash,
+                "maxCrash": max_crash,
+                "minCrash": min_crash,
+                "standardDeviation": std_dev
+            }
+
+            # Update or create stats with 'hourly' time_range
+            db.update_or_create_crash_stats(hour_start, stats_data, 'hourly')
+
+            logger.debug(
+                f"Updated hourly stats for {hour_start}: {games_count} games, avg={average_crash:.2f}x")
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error(f"Error updating hourly stats: {str(e)}")
+
+
+def get_crash_stats_for_range(start_date: datetime, end_date: datetime = None, time_range: str = 'daily') -> List[Dict[str, Any]]:
+    """Get crash statistics for a date range with the specified time_range.
+
+    Args:
+        start_date: The start date of the range
+        end_date: The end date of the range (defaults to current time if None)
+        time_range: The time range type ('daily' or 'hourly')
+
+    Returns:
+        List of crash stats dictionaries
+    """
+    logger.debug(
+        f"Getting {time_range} crash stats from {start_date} to {end_date or 'now'}")
+
+    if end_date is None:
+        end_date = datetime.now()
+
+    db = get_database()
+    session = db.get_session()
+    try:
+        stats_query = session.query(CrashStats).filter(
+            CrashStats.date >= start_date,
+            CrashStats.date <= end_date,
+            CrashStats.time_range == time_range
+        ).order_by(CrashStats.date)
+
+        stats_list = stats_query.all()
+        return [stat.to_dict() for stat in stats_list]
+    except Exception as e:
+        logger.error(f"Error getting {time_range} crash stats: {str(e)}")
+        return []
+    finally:
+        session.close()

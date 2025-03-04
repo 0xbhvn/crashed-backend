@@ -205,11 +205,12 @@ class Database:
         finally:
             session.close()
 
-    def get_crash_stats(self, date: datetime) -> Optional[CrashStats]:
-        """Get crash statistics for a specific date.
+    def get_crash_stats(self, date: datetime, time_range: str = 'daily') -> Optional[CrashStats]:
+        """Get crash statistics for a specific date and time range.
 
         Args:
             date: The date to get statistics for
+            time_range: The time range for the stats ('daily', 'hourly', etc.)
 
         Returns:
             CrashStats instance if found, None otherwise
@@ -217,7 +218,8 @@ class Database:
         session = self.get_session()
         try:
             stats = session.query(CrashStats).filter(
-                func.date(CrashStats.date) == func.date(date)).first()
+                func.date(CrashStats.date) == func.date(date),
+                CrashStats.time_range == time_range).first()
             return stats
         except SQLAlchemyError as e:
             logger.error(f"Error getting crash stats: {str(e)}")
@@ -225,12 +227,13 @@ class Database:
         finally:
             session.close()
 
-    def update_or_create_crash_stats(self, date: datetime, stats_data: Dict[str, Any]) -> CrashStats:
-        """Update or create crash statistics for a specific date.
+    def update_or_create_crash_stats(self, date: datetime, stats_data: Dict[str, Any], time_range: str = 'daily') -> CrashStats:
+        """Update or create crash statistics for a specific date and time range.
 
         Args:
             date: The date to update or create statistics for
             stats_data: Dictionary containing statistics data
+            time_range: The time range for the stats ('daily', 'hourly', etc.)
 
         Returns:
             Updated or created CrashStats instance
@@ -238,20 +241,24 @@ class Database:
         session = self.get_session()
         try:
             stats = session.query(CrashStats).filter(
-                func.date(CrashStats.date) == func.date(date)).first()
+                func.date(CrashStats.date) == func.date(date),
+                CrashStats.time_range == time_range).first()
 
             if stats:
                 # Update existing stats
                 for key, value in stats_data.items():
                     if hasattr(stats, key):
                         setattr(stats, key, value)
-                logger.debug(f"Updated crash stats for date: {date}")
+                logger.debug(
+                    f"Updated crash stats for date: {date}, time_range: {time_range}")
             else:
                 # Create new stats
                 stats_data['date'] = date
+                stats_data['time_range'] = time_range
                 stats = CrashStats(**stats_data)
                 session.add(stats)
-                logger.info(f"Created crash stats for date: {date}")
+                logger.info(
+                    f"Created crash stats for date: {date}, time_range: {time_range}")
 
             session.commit()
             session.refresh(stats)
