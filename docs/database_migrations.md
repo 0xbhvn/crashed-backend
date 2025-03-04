@@ -111,7 +111,7 @@ If you prefer to manage schema changes manually:
 1. Connect to your PostgreSQL database:
 
    ```bash
-   psql postgresql://bhaven:m9C5baYBHmMnBe9%3F@localhost:5432/bc_crash_db
+   psql postgresql://postgres@localhost:5432/bc_crash_db
    ```
 
 2. Use SQL to modify the tables:
