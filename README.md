@@ -78,7 +78,7 @@ The application consists of several main components:
 
 1. **BC Crash Monitor** (`src/history.py`): Core component that polls the BC Game API for crash results and processes them in real-time.
 
-2. **Database Module** (`src/sqlalchemy_db.py`): Handles database operations using SQLAlchemy, including storing crash games and calculating statistics.
+2. **Database Module** (`src/sqlalchemy_db.py`): Handles database operations using SQLAlchemy, including storing crash games.
 
 3. **Models** (`src/models.py`): Defines SQLAlchemy models for the database schema.
 
@@ -147,19 +147,6 @@ The database schema includes:
   - prepare_time: Prepare time converted to datetime (in IST timezone UTC+5:30)
   - begin_time_unix: Unix timestamp when the game began (in milliseconds)
   - begin_time: Begin time converted to datetime (in IST timezone UTC+5:30)
-  - created_at: Timestamp when the record was created (in IST timezone UTC+5:30)
-  - updated_at: Timestamp when the record was last updated (in IST timezone UTC+5:30)
-
-- **crash_stats**: Stores daily statistical aggregates
-  - date: The date of the statistics
-  - games_count: Number of games that day
-  - average_crash: Average crash point
-  - median_crash: Median crash point
-  - max_crash: Maximum crash point
-  - min_crash: Minimum crash point
-  - standard_deviation: Standard deviation of crash points
-  - created_at: Timestamp when the record was created (in IST timezone UTC+5:30)
-  - updated_at: Timestamp when the record was last updated (in IST timezone UTC+5:30)
 
 ### Timezone Handling
 
@@ -311,7 +298,7 @@ If you need to work with the database directly:
 
 ```python
 from src.sqlalchemy_db import get_database
-from src.models import CrashGame, CrashStats
+from src.models import CrashGame
 
 # Get database instance
 db = get_database()
@@ -319,13 +306,6 @@ db = get_database()
 # Query data using a session
 with db.get_session() as session:
     recent_games = session.query(CrashGame).order_by(CrashGame.id.desc()).limit(10).all()
-    for game in recent_games:
-        print(f"Game ID: {game.gameId}, Crash Point: {game.crashPoint}x")
-
-# Or use the convenience methods
-recent_games = db.get_latest_crash_games(limit=10)
-for game in recent_games:
-    print(f"Game ID: {game.gameId}, Crash Point: {game.crashPoint}x")
 ```
 
 ## Contributing
