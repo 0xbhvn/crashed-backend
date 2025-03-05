@@ -37,6 +37,11 @@ def parse_arguments():
         action="store_true",
         help="Skip the catchup process on startup"
     )
+    monitor_parser.add_argument(
+        "--skip-polling",
+        action="store_true",
+        help="Skip the polling process and only run the API server"
+    )
 
     # Catchup command
     catchup_parser = subparsers.add_parser(
@@ -93,27 +98,57 @@ def parse_arguments():
     return parser.parse_args()
 
 
-async def run_monitor(skip_catchup: bool = False) -> None:
+async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) -> None:
     """
     Run the BC Game Crash Monitor
 
     Args:
         skip_catchup: Whether to skip the catchup process
+        skip_polling: Whether to skip the polling process and only run the API server
     """
     logger = logging.getLogger("app")
 
     # Initialize the monitor
     db_engine = None
+    db = None
 
     if config.DATABASE_ENABLED:
         try:
             # Initialize database
             from sqlalchemy import create_engine
             db_engine = create_engine(config.DATABASE_URL)
+            # Create database instance for API routes
+            from .db.engine import Database
+            db = Database(connection_string=config.DATABASE_URL)
             logger.info("Database connection established")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             logger.warning("Continuing without database support")
+
+    # Set up API server
+    from .api import setup_api_routes
+    api_app = web.Application()
+
+    if db:
+        # Set up API routes if database is available
+        setup_api_routes(api_app, db)
+
+    # Start API server
+    # Default to port 3000 if not specified
+    api_port = int(os.environ.get('API_PORT', 3000))
+    runner = web.AppRunner(api_app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', api_port)
+    await site.start()
+    logger.info(f"API server started on port {api_port}")
+
+    # Skip the rest if we're only running the API server
+    if skip_polling:
+        logger.info("Polling skipped, only running API server")
+        # Keep the application running
+        while True:
+            await asyncio.sleep(3600)  # Sleep for an hour
+        return
 
     # Create monitor instance
     monitor = BCCrashMonitor(
@@ -328,7 +363,8 @@ async def main() -> None:
     else:
         # Default to monitor command
         skip_catchup = getattr(args, "skip_catchup", False)
-        await run_monitor(skip_catchup=skip_catchup)
+        skip_polling = getattr(args, "skip_polling", False)
+        await run_monitor(skip_catchup=skip_catchup, skip_polling=skip_polling)
 
 
 def main_cli() -> None:

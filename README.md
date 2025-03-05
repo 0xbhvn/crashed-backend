@@ -8,6 +8,7 @@ A Python application for monitoring BC Game's crash game, calculating crash valu
 - Historical data catchup functionality
 - Crash point calculation and verification
 - Database storage of game results
+- REST API for accessing crash data
 - Configurable logging and monitoring settings
 - Command-line interface for different operations
 
@@ -20,6 +21,7 @@ src/
 ├── app.py             # Main application entry point
 ├── config.py          # Configuration settings
 ├── history.py         # Crash monitor implementation
+├── api.py             # API routes and endpoint definitions
 ├── db/                # Database module
 │   ├── __init__.py    # Database module initialization
 │   ├── engine.py      # Database engine and connection
@@ -66,6 +68,7 @@ The application can be configured using environment variables:
 - `API_HISTORY_ENDPOINT`: API endpoint for crash history (default: '/api/crash/games/history')
 - `GAME_URL`: Game URL path (default: '/game/crash')
 - `PAGE_SIZE`: Number of games per page in API requests (default: 50)
+- `API_PORT`: Port for the REST API server (default: 3000)
 
 ### Calculation Settings
 
@@ -92,6 +95,10 @@ The application can be configured using environment variables:
 - `CATCHUP_PAGES`: Number of pages to fetch during catchup (default: 20)
 - `CATCHUP_BATCH_SIZE`: Batch size for concurrent requests during catchup (default: 20)
 
+### Timezone Settings
+
+- `TIMEZONE`: Timezone for datetime values in API responses (default: 'UTC'). Any valid timezone name from the IANA timezone database can be used (e.g., 'America/New_York', 'Europe/London', 'Asia/Kolkata').
+
 ## Usage
 
 ### Running the Monitor
@@ -103,6 +110,12 @@ python -m src
 # Run with specific command
 python -m src monitor --skip-catchup
 
+# Run without initial catchup
+python -m src monitor --skip-catchup
+
+# Run only the API server (no polling)
+python -m src monitor --skip-polling
+
 # Run catchup only
 python -m src catchup --pages 50 --batch-size 10
 ```
@@ -111,10 +124,22 @@ python -m src catchup --pages 50 --batch-size 10
 
 - `monitor`: Run the crash monitor (default command)
   - `--skip-catchup`: Skip the initial catchup process
+  - `--skip-polling`: Run only the API server without polling BC Game
 
 - `catchup`: Run only the historical data catchup
   - `--pages`: Number of pages to fetch (default: from config)
   - `--batch-size`: Batch size for concurrent requests (default: from config)
+
+### API
+
+The application includes a REST API for accessing crash data.
+
+Basic endpoints:
+
+- `GET /api/games` - Get crash games with pagination
+- `GET /api/games/{game_id}` - Get a specific game by ID
+
+For detailed API documentation, see [docs/API.md](docs/API.md).
 
 ## Development
 
