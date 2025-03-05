@@ -12,11 +12,15 @@ import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import time
+import pytz
 
 from .. import config
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Define timezone from configuration
+app_timezone = pytz.timezone(config.TIMEZONE)
 
 
 class APIError(Exception):
@@ -168,13 +172,13 @@ def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[s
         # Add timestamps if available
         if "endTime" in game_data:
             processed_data["endTime"] = datetime.fromtimestamp(
-                game_data["endTime"] / 1000) if game_data["endTime"] else None
+                game_data["endTime"] / 1000, tz=app_timezone) if game_data["endTime"] else None
         if "prepareTime" in game_data:
             processed_data["prepareTime"] = datetime.fromtimestamp(
-                game_data["prepareTime"] / 1000) if game_data["prepareTime"] else None
+                game_data["prepareTime"] / 1000, tz=app_timezone) if game_data["prepareTime"] else None
         if "beginTime" in game_data:
             processed_data["beginTime"] = datetime.fromtimestamp(
-                game_data["beginTime"] / 1000) if game_data["beginTime"] else None
+                game_data["beginTime"] / 1000, tz=app_timezone) if game_data["beginTime"] else None
 
         # Add crashed floor value
         if "crashPoint" in processed_data:
@@ -188,9 +192,10 @@ def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[s
                         # Convert timestamp to datetime
                         timestamp_val = int(game_detail[field])
                         processed_data[field] = datetime.fromtimestamp(
-                            timestamp_val / 1000.0)
+                            timestamp_val / 1000, tz=app_timezone) if timestamp_val else None
                     except (ValueError, TypeError) as e:
-                        logger.warning(f"Failed to convert {field}: {e}")
+                        logger.warning(
+                            f"Error converting timestamp for {field}: {e}")
 
         # Add additional fields from the original data
         for src_field, dest_field in [
