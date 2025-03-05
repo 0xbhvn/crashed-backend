@@ -7,6 +7,7 @@ buildCommand = "pip install -r requirements.txt"
 startCommand = "python -m src monitor"
 healthcheckPath = "/"
 healthcheckTimeout = 300
+healthcheckPort = 8080
 
 [database]
 useConnectionString = true
