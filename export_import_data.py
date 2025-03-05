@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, text
 import argparse
 import json
 import sys
+import os
 from datetime import datetime
 import pytz
 
@@ -151,21 +152,33 @@ def import_data(input_file='crash_games_export.json', target_db_url=None):
 
 
 def main():
+    """Main entry point for the script"""
     parser = argparse.ArgumentParser(
-        description='Export/import crash games data between databases')
-    parser.add_argument('action', choices=[
-                        'export', 'import'], help='Action to perform')
-    parser.add_argument('--file', help='Input/output file path',
-                        default='crash_games_export.json')
-    parser.add_argument('--target-db', help='Target database URL for import',
-                        default=os.environ.get('RAILWAY_DATABASE_URL'))
+        description='Export/Import BC Game crash data')
+    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+
+    # Export command
+    export_parser = subparsers.add_parser(
+        'export', help='Export data from database')
+    export_parser.add_argument('--output', help='Output file path',
+                               default='crash_games_export.json')
+
+    # Import command
+    import_parser = subparsers.add_parser(
+        'import', help='Import data to database')
+    import_parser.add_argument('--input', help='Input file path',
+                               default='crash_games_export.json')
+    import_parser.add_argument('--target-db', help='Target database URL',
+                               default=os.environ.get('RAILWAY_DATABASE_URL', config.DATABASE_URL))
 
     args = parser.parse_args()
 
-    if args.action == 'export':
-        export_data(args.file)
-    elif args.action == 'import':
-        import_data(args.file, args.target_db)
+    if args.command == 'export':
+        export_data(args.output)
+    elif args.command == 'import':
+        import_data(args.input, args.target_db)
+    else:
+        parser.print_help()
 
 
 if __name__ == '__main__':
