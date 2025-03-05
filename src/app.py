@@ -11,6 +11,7 @@ import asyncio
 import argparse
 import logging
 from typing import Optional, Dict, Any
+from aiohttp import web
 
 # Import from local modules
 from . import config
@@ -271,8 +272,31 @@ async def run_migrations(migrate_command, **kwargs):
         raise
 
 
+async def health_check(request):
+    """Simple health check endpoint for Railway deployment."""
+    return web.Response(text="OK", status=200)
+
+
+async def start_health_check_server():
+    """Start a simple HTTP server for health checks."""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Railway will route to port 8080 by default
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+
+    logger = logging.getLogger("app")
+    logger.info("Health check server started on port 8080")
+
+
 async def main() -> None:
     """Main entry point for the application"""
+    # Start health check server for Railway
+    asyncio.create_task(start_health_check_server())
+
     # Parse command line arguments
     args = parse_arguments()
 
