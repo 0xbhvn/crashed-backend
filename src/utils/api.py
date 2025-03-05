@@ -19,9 +19,6 @@ from .. import config
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Define timezone from configuration
-app_timezone = pytz.timezone(config.TIMEZONE)
-
 
 class APIError(Exception):
     """Exception raised for API errors."""
@@ -168,6 +165,9 @@ def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[s
             processed_data["hashValue"] = str(game_data["hash"])
         elif "hash" in game_detail:
             processed_data["hashValue"] = str(game_detail["hash"])
+
+        # Get the timezone inside the function to avoid circular imports
+        app_timezone = pytz.timezone(config.TIMEZONE)
 
         # Add timestamps if available
         if "endTime" in game_data:

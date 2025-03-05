@@ -7,28 +7,26 @@ Usage:
 2. Import data: python export_import_data.py import
 """
 
-import src.config as config
+from src.utils import load_env
+from src import config
+from src.db.models import CrashGame
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, text
-from src.db import get_database, CrashGame
-from src.utils import load_env
 import argparse
 import json
-import os
 import sys
 from datetime import datetime
 import pytz
 
 # Add parent directory to sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, '.')
 
-# Import app modules
 
 # Load environment variables
 load_env()
 
-# Define timezone from configuration
-app_timezone = pytz.timezone(config.TIMEZONE)
+# Remove module level timezone definition
+# app_timezone = pytz.timezone(config.TIMEZONE)
 
 
 def serialize_datetime(obj):
@@ -40,6 +38,8 @@ def serialize_datetime(obj):
 
 def export_data(output_file='crash_games_export.json'):
     """Export data from local database to JSON file"""
+    from src.db.engine import get_database
+
     print(f"Exporting data from local database ({config.DATABASE_URL})...")
 
     # Get database and session
@@ -65,10 +65,7 @@ def export_data(output_file='crash_games_export.json'):
 
 def import_data(input_file='crash_games_export.json', target_db_url=None):
     """Import data from JSON file to target database"""
-    if not target_db_url:
-        print("ERROR: No target database URL provided. Set RAILWAY_DATABASE_URL environment variable.")
-        sys.exit(1)
-
+    target_db_url = target_db_url or config.DATABASE_URL
     print(f"Importing data to target database...")
 
     # Load data from JSON file
@@ -109,6 +106,9 @@ def import_data(input_file='crash_games_export.json', target_db_url=None):
         # Insert data
         count = 0
         for game_data in games_data:
+            # Get the timezone inside the function to avoid circular imports
+            app_timezone = pytz.timezone(config.TIMEZONE)
+
             # Convert string ISO dates back to datetime objects
             for date_field in ['endTime', 'prepareTime', 'beginTime']:
                 if game_data.get(date_field) and isinstance(game_data[date_field], str):
