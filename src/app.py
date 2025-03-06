@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Unified entry point for the BC Game Crash Monitor application.
 
@@ -13,6 +14,8 @@ import logging
 from typing import Optional, Dict, Any
 from aiohttp import web
 import gc
+import json
+import subprocess
 
 # Import from local modules
 from . import config
@@ -209,7 +212,7 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
 
 async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = None) -> None:
     """
-    Run the catchup process to fetch historical game data.
+    Run the catchup process to fetch historical crash game data.
 
     Args:
         pages: Number of pages to fetch
@@ -244,6 +247,93 @@ async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = No
     total_saved = 0
     total_failed = 0
 
+    # Helper function to use our Selenium-based fetcher
+    def fetch_with_selenium_fetcher(page, page_size, output_file="temp_data.json"):
+        try:
+            # First, try to import the cookie-based fetcher directly
+            use_cf_cookies_path = os.path.join(os.path.dirname(
+                os.path.dirname(__file__)), "use_cf_cookies.py")
+
+            if os.path.exists(use_cf_cookies_path):
+                # Add the project root to sys.path if it's not already there
+                project_root = os.path.dirname(os.path.dirname(__file__))
+                if project_root not in sys.path:
+                    sys.path.append(project_root)
+
+                # Try to import functions directly
+                try:
+                    # Using importlib to import the module dynamically
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location(
+                        "use_cf_cookies", use_cf_cookies_path)
+                    cf_cookies_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(cf_cookies_module)
+
+                    # Now use the imported function
+                    logger.info(
+                        f"Using direct import of use_cf_cookies for page {page}, size {page_size}")
+                    data = cf_cookies_module.fetch_game_history(
+                        page, page_size)
+
+                    # Save the data to the output file
+                    with open(output_file, 'w') as f:
+                        json.dump(data, f, indent=2)
+
+                    return data
+
+                except Exception as e:
+                    logger.warning(
+                        f"Error importing use_cf_cookies directly: {e}")
+                    # Fall back to subprocess approach
+
+            # Locate our bc_game_fetcher.py in the project root
+            script_path = os.path.join(os.path.dirname(
+                os.path.dirname(__file__)), "bc_game_fetcher.py")
+
+            if not os.path.exists(script_path):
+                logger.error(f"Fetcher script not found at {script_path}")
+                return None
+
+            # Execute our BC Game fetcher script
+            cmd = [sys.executable, script_path,
+                   "--page", str(page),
+                   "--size", str(page_size),
+                   "--output", output_file]
+
+            logger.info(f"Executing fetcher: {' '.join(cmd)}")
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            logger.info(f"Fetcher stdout: {result.stdout}")
+
+            if result.stderr:
+                logger.warning(f"Fetcher stderr: {result.stderr}")
+
+            if result.returncode != 0:
+                logger.error(f"Error running fetcher: {result.stderr}")
+                return None
+
+            # Check if output file exists
+            if not os.path.exists(output_file):
+                logger.error(f"Output file {output_file} not created")
+                return None
+
+            # Load the data from the file
+            with open(output_file, 'r') as f:
+                try:
+                    data = json.load(f)
+                    logger.info(
+                        f"File content keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+                    if 'data' in data:
+                        logger.info(
+                            f"Data keys: {list(data['data'].keys()) if isinstance(data['data'], dict) else 'not a dict'}")
+                    return data
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in output file: {e}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error using Selenium fetcher: {e}")
+            return None
+
     # Fetch data in batches
     for page in range(1, pages + 1, batch_size):
         # Calculate end page for this batch
@@ -255,49 +345,140 @@ async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = No
             f"pages {page}-{end_page}"
         )
 
-        # Fetch pages in parallel
-        games = await fetch_games_batch(start_page=page, end_page=end_page, page_size=page_size)
+        # Process individual pages
+        batch_fetched = 0
+        batch_skipped = 0
+        batch_saved = 0
+        batch_failed = 0
 
-        if not games:
-            logger.warning(
-                f"No games found in batch (pages {page}-{end_page})")
-            continue
+        # First try with the Selenium-based fetcher
+        for current_page in range(page, end_page + 1):
+            temp_file = f"temp_page_{current_page}.json"
+            data = fetch_with_selenium_fetcher(
+                current_page, page_size, temp_file)
 
-        logger.info(f"Fetched {len(games)} games from pages {page}-{end_page}")
-        total_fetched += len(games)
+            # If Selenium fetcher fails, fall back to the original method
+            if not data:
+                logger.warning(
+                    f"Selenium fetcher failed for page {current_page}, falling back to original method")
+                try:
+                    # Original API fetching method
+                    from .utils.api import fetch_game_history
+                    data = await fetch_game_history(page=current_page, page_size=page_size)
+                except Exception as e:
+                    logger.error(f"Error fetching page {current_page}: {e}")
+                    batch_failed += 1
+                    continue
 
-        # Skip saving if database is not enabled
-        if not config.DATABASE_ENABLED or db is None:
+            # Get game items - handle both formats ('list' and 'items')
+            game_items = []
+            if 'data' in data:
+                if 'items' in data['data']:
+                    game_items = data['data']['items']
+                elif 'list' in data['data']:
+                    game_items = data['data']['list']
+
+            # Skip if no games were found
+            if not game_items:
+                logger.warning(f"No games found on page {current_page}")
+                batch_skipped += 1
+                continue
+
+            # Process each game
+            games_processed = 0
+            for game in game_items:
+                # Continue with existing processing logic
+                try:
+                    # Extract game details
+                    game_id = str(game.get("gameId", ""))
+
+                    # Extract game details if in JSON string format
+                    game_detail = {}
+                    if "gameDetail" in game and isinstance(game["gameDetail"], str):
+                        try:
+                            game_detail = json.loads(game["gameDetail"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse gameDetail for game {game_id}")
+
+                    # Get hash and crash point
+                    hash_value = game.get(
+                        "hash", "") or game_detail.get("hash", "")
+
+                    # Get crash point (rate)
+                    crash_point = 1.0  # Default value
+                    if "rate" in game_detail:
+                        try:
+                            crash_point = float(game_detail["rate"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    # Calculate expected crash point
+                    calculated_point = 0.0
+                    if hash_value and config.BC_GAME_SALT:
+                        try:
+                            from .history import BCCrashMonitor
+                            calculated_point = BCCrashMonitor.calculate_crash_point(
+                                hash_value, config.BC_GAME_SALT)
+                        except Exception as e:
+                            logger.error(
+                                f"Error calculating crash point: {e}")
+
+                    # Store in database
+                    if db and config.DATABASE_ENABLED:
+                        try:
+                            from .db.operations import store_crash_game
+                            game_obj = await store_crash_game(
+                                game_id=game_id,
+                                hash_value=hash_value,
+                                crash_point=crash_point,
+                                calculated_point=calculated_point,
+                                game_detail=game_detail
+                            )
+                            if game_obj:
+                                batch_saved += 1
+                                games_processed += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Error storing game {game_id}: {e}")
+                            batch_failed += 1
+                    else:
+                        games_processed += 1
+
+                except Exception as e:
+                    logger.error(f"Error processing game: {e}")
+                    batch_failed += 1
+
             logger.info(
-                f"Database disabled, not saving games (skipped {len(games)} games)")
-            total_skipped += len(games)
-            continue
+                f"Processed {games_processed} games from page {current_page}")
+            batch_fetched += games_processed
 
-        # Save games to database
-        saved_count = 0
-        failed_count = 0
+            # Clean up temp file
+            if os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to remove temp file {temp_file}: {e}")
 
-        for game in games:
-            try:
-                db.add_crash_game(game)
-                saved_count += 1
-            except Exception as e:
-                logger.error(f"Failed to save game {game.get('gameId')}: {e}")
-                failed_count += 1
+        # Update totals
+        total_fetched += batch_fetched
+        total_skipped += batch_skipped
+        total_saved += batch_saved
+        total_failed += batch_failed
 
         logger.info(
-            f"Saved {saved_count}/{len(games)} games from pages {page}-{end_page}")
+            f"Batch complete: fetched {batch_fetched}, skipped {batch_skipped}, "
+            f"saved {batch_saved}, failed {batch_failed}"
+        )
 
-        if failed_count > 0:
-            logger.warning(
-                f"Failed to save {failed_count}/{len(games)} games from pages {page}-{end_page}")
+        # Add a short delay between batches
+        await asyncio.sleep(1)
 
-        total_saved += saved_count
-        total_failed += failed_count
-
+    # Print summary
     logger.info(
-        f"Catchup completed: Fetched {total_fetched}, "
-        f"Saved {total_saved}, Skipped {total_skipped}, Failed {total_failed}"
+        f"Catchup complete: fetched {total_fetched}, skipped {total_skipped}, "
+        f"saved {total_saved}, failed {total_failed}"
     )
 
     # Broadcast games via WebSocket if database is connected
@@ -305,7 +486,8 @@ async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = No
         try:
             # Get the API app to access the websocket manager
             from aiohttp.web import Application
-            import gc
+            from .db.models import CrashGame
+
             for obj in gc.get_objects():
                 if isinstance(obj, Application) and 'websocket_manager' in obj:
                     api_app = obj
@@ -342,6 +524,10 @@ async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = No
                     f"Broadcasted {len(games_data)} recent games via WebSocket")
         except Exception as e:
             logger.error(f"Error broadcasting games via WebSocket: {e}")
+
+    # Close database connection
+    if db:
+        db.close()
 
 
 async def run_migrations(migrate_command, **kwargs):

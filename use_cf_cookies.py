@@ -87,15 +87,38 @@ def fetch_game_history(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         if response.headers.get('content-type', '').startswith('application/json'):
             result = response.json()
 
-            # Check if we got game data
-            if 'data' in result and 'list' in result['data']:
-                games_count = len(result['data']['list'])
-                logger.info(f"Successfully fetched {games_count} games")
-                return result
+            # Check if we got game data and standardize the format
+            if 'data' in result:
+                if 'list' in result['data']:
+                    games_count = len(result['data']['list'])
+                    logger.info(
+                        f"Successfully fetched {games_count} games (list format)")
+
+                    # Create a standard format with 'items' key
+                    standardized_result = {
+                        'data': {
+                            'items': result['data']['list'],
+                            'page': result['data'].get('page', page),
+                            'pageSize': result['data'].get('pageSize', page_size),
+                            'total': result['data'].get('total', games_count),
+                            'totalPage': result['data'].get('totalPage', 1)
+                        }
+                    }
+                    return standardized_result
+
+                elif 'items' in result['data']:
+                    games_count = len(result['data']['items'])
+                    logger.info(
+                        f"Successfully fetched {games_count} games (items format)")
+                    return result
+                else:
+                    logger.warning(
+                        "Response does not contain expected game data structure")
+                    # Create an empty standardized result
+                    return {'data': {'items': []}}
             else:
-                logger.warning(
-                    "Response does not contain expected game data structure")
-                return result
+                logger.warning("Response does not contain 'data' key")
+                return {'data': {'items': []}}
         else:
             # This might be a Cloudflare challenge
             logger.warning(
@@ -120,8 +143,17 @@ def fetch_game_history(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
             if 'data' in result and 'list' in result['data']:
                 games_count = len(result['data']['list'])
                 logger.info(
-                    f"Successfully fetched {games_count} games on second attempt")
-            return result
+                    f"Successfully fetched {games_count} games on second attempt (list format)")
+                return {'data': {'items': result['data']['list']}}
+            elif 'data' in result and 'items' in result['data']:
+                games_count = len(result['data']['items'])
+                logger.info(
+                    f"Successfully fetched {games_count} games on second attempt (items format)")
+                return result
+            else:
+                logger.warning(
+                    "Response still does not contain expected game data structure")
+                return {'data': {'items': []}}
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching game history: {e}")
@@ -154,7 +186,7 @@ def main():
 
         # Print summary
         games_count = len(
-            data['data']['list']) if 'data' in data and 'list' in data['data'] else 0
+            data['data']['items']) if 'data' in data and 'items' in data['data'] else 0
         logger.info(
             f"Summary: Fetched page {args.page} with {games_count} games")
 
