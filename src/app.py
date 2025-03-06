@@ -59,6 +59,12 @@ def parse_arguments():
         default=config.CATCHUP_BATCH_SIZE,
         help=f"Batch size for concurrent requests (default: {config.CATCHUP_BATCH_SIZE})"
     )
+    catchup_parser.add_argument(
+        "--page-size",
+        type=int,
+        default=int(os.environ.get('PAGE_SIZE', '20')),
+        help=f"Number of items per page (default: 20, max: 100)"
+    )
 
     # Database migration commands
     migrate_parser = subparsers.add_parser(
@@ -167,7 +173,7 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     if not skip_catchup and config.CATCHUP_ENABLED:
         try:
             logger.info("Running catchup process...")
-            await run_catchup(pages=config.CATCHUP_PAGES, batch_size=config.CATCHUP_BATCH_SIZE)
+            await run_catchup(pages=config.CATCHUP_PAGES, batch_size=config.CATCHUP_BATCH_SIZE, page_size=config.CATCHUP_PAGE_SIZE)
             logger.info("Catchup process completed")
         except Exception as e:
             logger.error(f"Error during catchup process: {e}")
@@ -201,17 +207,22 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     logger.info("BC Game Crash Monitor stopped")
 
 
-async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
+async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = None) -> None:
     """
     Run the catchup process to fetch historical game data.
 
     Args:
         pages: Number of pages to fetch
         batch_size: Batch size for concurrent requests
+        page_size: Number of items per page (default is 20, max is 100)
     """
     logger = logging.getLogger("app.catchup")
     logger.info(
-        f"Starting catchup with {pages} pages, batch size {batch_size}")
+        f"Starting catchup with {pages} pages, batch size {batch_size}, page size {page_size}")
+
+    # Use default page size if not provided
+    if page_size is None:
+        page_size = int(os.environ.get('PAGE_SIZE', '20'))
 
     # Import here to avoid circular imports
     from .db.engine import Database
@@ -245,7 +256,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
         )
 
         # Fetch pages in parallel
-        games = await fetch_games_batch(start_page=page, end_page=end_page)
+        games = await fetch_games_batch(start_page=page, end_page=end_page, page_size=page_size)
 
         if not games:
             logger.warning(
@@ -268,7 +279,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
 
         for game in games:
             try:
-                db.save_crash_game(game)
+                db.add_crash_game(game)
                 saved_count += 1
             except Exception as e:
                 logger.error(f"Failed to save game {game.get('gameId')}: {e}")
@@ -409,7 +420,7 @@ async def main() -> None:
 
     # Run the appropriate command
     if args.command == "catchup":
-        await run_catchup(pages=args.pages, batch_size=args.batch_size)
+        await run_catchup(pages=args.pages, batch_size=args.batch_size, page_size=args.page_size)
     elif args.command == "migrate":
         if not args.migrate_command:
             logger.error("No migration command specified")

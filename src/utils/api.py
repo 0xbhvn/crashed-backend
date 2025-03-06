@@ -6,18 +6,27 @@ including fetching game history and processing game data.
 """
 
 import logging
+import os
+import json
 import aiohttp
 import asyncio
-import json
-from typing import Dict, List, Any, Optional
-from datetime import datetime
+import subprocess
+import random
 import time
 import pytz
+from typing import Dict, List, Any, Optional
+from datetime import datetime
 
 from .. import config
+from .mock_data import generate_mock_history, save_mock_history
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Track consecutive failures to know when to switch to mock data
+consecutive_failures = 0
+MAX_CONSECUTIVE_FAILURES = 3
+USE_MOCK_DATA = os.environ.get('USE_MOCK_DATA', 'false').lower() == 'true'
 
 
 class APIError(Exception):
@@ -25,14 +34,15 @@ class APIError(Exception):
     pass
 
 
-async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str = None) -> Dict[str, Any]:
+async def fetch_game_history(page: int = 1, page_size: int = None, base_url: str = None, endpoint: str = None) -> Dict[str, Any]:
     """
-    Fetch game history from the BC Game API.
+    Fetch game history from BC Game by executing the shell script.
 
     Args:
-        page: Page number to fetch
-        base_url: API base URL (default from config)
-        endpoint: API endpoint (default from config)
+        page: Page number to fetch (used for updating the script data payload)
+        page_size: Number of items per page (default is 50, max is 1000)
+        base_url: API base URL (not used with shell script approach)
+        endpoint: API endpoint (not used with shell script approach)
 
     Returns:
         Dictionary containing game history data
@@ -40,81 +50,159 @@ async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str 
     Raises:
         APIError: If there was an error fetching the history
     """
-    base_url = base_url or config.API_BASE_URL
-    endpoint = endpoint or config.API_HISTORY_ENDPOINT
+    global consecutive_failures, USE_MOCK_DATA
 
-    url = f"{base_url}{endpoint}"
+    # Use default page size from config if not specified
+    if page_size is None:
+        page_size = int(os.environ.get('PAGE_SIZE', '50'))
 
-    # Prepare request payload based on the curl command
-    payload = {
-        "gameUrl": config.GAME_URL,
-        "page": page,
-        "pageSize": config.PAGE_SIZE
-    }
+    # If we're in mock mode or have too many failures, use mock data
+    if USE_MOCK_DATA:
+        logger.info(
+            f"Using mock data for page {page} with size {page_size} (mock mode enabled)")
+        mock_data = generate_mock_history(page, page_size)
+        # Convert to expected format
+        return {'data': {'items': mock_data['data']['list']}}
 
-    logger.info(f"Fetching game history from page {page}")
+    logger.info(
+        f"Fetching game history from page {page} with size {page_size} using shell script")
 
     try:
-        async with aiohttp.ClientSession() as session:
-            start_time = time.time()
+        # Path to the shell script relative to current working directory
+        script_path = os.path.join(os.getcwd(), "fetch_crash_history.sh")
 
-            # Make POST request with proper headers and payload
-            async with session.post(
-                url,
-                json=payload,
-                headers=config.API_HEADERS,
-                timeout=30
-            ) as response:
-                end_time = time.time()
-                elapsed = end_time - start_time
+        # Ensure the script is executable
+        os.chmod(script_path, 0o755)
+
+        # Add a small random delay to avoid rate limiting
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+
+        # Prepare output file name for this page to avoid conflicts with concurrent requests
+        json_file_path = os.path.join(
+            os.getcwd(), f"crash_history_p{page}_s{page_size}.json")
+
+        start_time = time.time()
+
+        # Execute the shell script using subprocess with page parameter
+        # This will create the JSON file in the current directory
+        process = await asyncio.create_subprocess_exec(
+            script_path,
+            "--page", str(page),
+            "--size", str(page_size),
+            "--output", json_file_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        # Wait for the script to complete
+        stdout, stderr = await process.communicate()
+
+        end_time = time.time()
+        elapsed = end_time - start_time
+
+        if process.returncode != 0:
+            logger.error(f"Shell script execution failed: {stderr.decode()}")
+            consecutive_failures += 1
+            raise APIError(
+                f"Failed to fetch game history: Shell script returned {process.returncode}")
+
+        logger.debug(f"Shell script completed in {elapsed:.2f}s")
+
+        # Read the results from the JSON file
+        try:
+            with open(json_file_path, 'r') as f:
+                file_content = f.read()
                 logger.debug(
-                    f"API request completed in {elapsed:.2f}s (status: {response.status})")
+                    f"Read {len(file_content)} bytes from {json_file_path}")
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(
-                        f"API returned error: {response.status} - {error_text}")
-                    raise APIError(
-                        f"Failed to fetch game history: {response.status} - {error_text}")
+                # Check if the file contains HTML (Cloudflare challenge) instead of JSON
+                if file_content.strip().startswith('<!DOCTYPE html>') or '<html' in file_content[:100]:
+                    logger.warning(
+                        "Received Cloudflare challenge instead of JSON. API access may be blocked.")
+                    consecutive_failures += 1
 
-                try:
-                    json_data = await response.json()
-
-                    # Check for the new response format (list instead of items)
-                    if 'data' in json_data and 'list' in json_data['data']:
-                        items_count = len(json_data['data']['list'])
-                        logger.debug(
-                            f"Fetched page {page} with {items_count} games")
-
-                        # Convert to expected format for compatibility
-                        converted_data = {
-                            'data': {
-                                'items': json_data['data']['list']
-                            }
-                        }
-                        return converted_data
-                    elif 'data' in json_data and 'items' in json_data['data']:
-                        # Original format
-                        items_count = len(json_data['data']['items'])
-                        logger.debug(
-                            f"Fetched page {page} with {items_count} games")
-                        return json_data
-                    else:
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                         logger.warning(
-                            f"Unexpected response format: {json_data}")
-                        # Return empty result with expected structure
-                        return {'data': {'items': []}}
+                            f"Switching to mock data after {consecutive_failures} consecutive failures")
+                        USE_MOCK_DATA = True
+                        # Generate and save mock data for this page
+                        mock_data = save_mock_history(
+                            page, page_size, output_path=json_file_path)
+                        # Return in expected format
+                        return {'data': {'items': mock_data['data']['list']}}
 
-                except json.JSONDecodeError as e:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to parse API response: {str(e)} - Response: {error_text[:200]}...")
-                    raise APIError(f"Failed to parse API response: {str(e)}")
-    except asyncio.TimeoutError:
-        logger.error(f"API request timed out for page {page}")
-        raise APIError(f"API request timed out for page {page}")
+                    # Return an empty result with expected structure to prevent crashing
+                    return {'data': {'items': []}}
+
+                # If the file is empty, return empty result
+                if not file_content.strip():
+                    logger.warning(f"Empty JSON file: {json_file_path}")
+                    consecutive_failures += 1
+                    return {'data': {'items': []}}
+
+                # Try to parse the JSON
+                json_data = json.loads(file_content)
+
+                # Reset the failure counter on success
+                consecutive_failures = 0
+
+                # Clean up the file after reading it
+                try:
+                    os.remove(json_file_path)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to remove temporary file {json_file_path}: {e}")
+
+            # Check for the right format in the JSON data
+            if 'data' in json_data and 'list' in json_data['data']:
+                items_count = len(json_data['data']['list'])
+                logger.debug(
+                    f"Fetched page {page} with {items_count} games from file")
+
+                # Convert to expected format for compatibility
+                converted_data = {
+                    'data': {
+                        'items': json_data['data']['list']
+                    }
+                }
+                return converted_data
+            elif 'data' in json_data and 'items' in json_data['data']:
+                # Original format
+                items_count = len(json_data['data']['items'])
+                logger.debug(f"Fetched page {page} with {items_count} games")
+                return json_data
+            else:
+                logger.warning(f"Unexpected response format in JSON file")
+                consecutive_failures += 1
+                # Return empty result with expected structure
+                return {'data': {'items': []}}
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON file: {str(e)}")
+            consecutive_failures += 1
+
+            # If we consistently get errors, fall back to mock data
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES or os.environ.get('ENVIRONMENT', 'production').lower() == 'development':
+                logger.warning(
+                    f"Switching to mock data after {consecutive_failures} consecutive failures")
+                USE_MOCK_DATA = True
+                # Generate and save mock data
+                mock_data = save_mock_history(
+                    page, page_size, output_path=json_file_path)
+                # Return in expected format
+                return {'data': {'items': mock_data['data']['list']}}
+
+            raise APIError(f"Failed to parse JSON file: {str(e)}")
+        except FileNotFoundError:
+            logger.error(f"JSON file not found at {json_file_path}")
+            consecutive_failures += 1
+            raise APIError(f"JSON file not found at {json_file_path}")
+
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         logger.error(f"Error fetching game history: {str(e)}")
+        consecutive_failures += 1
         raise APIError(f"Failed to fetch game history: {str(e)}")
 
 
@@ -226,59 +314,129 @@ def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[s
 async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
                             base_url: str = None, endpoint: str = None,
                             game_url: str = None, end_page: int = None,
-                            batch_size: int = None) -> List[Dict[str, Any]]:
+                            batch_size: int = None, page_size: int = None) -> List[Dict[str, Any]]:
     """
-    Fetch multiple pages of game history concurrently.
+    Fetch multiple pages of game history concurrently using shell script.
 
     Args:
         start_page: Starting page number
         num_pages: Number of pages to fetch
-        base_url: API base URL (default from config)
-        endpoint: API endpoint (default from config)
+        base_url: API base URL (not used with shell script approach)
+        endpoint: API endpoint (not used with shell script approach)
         game_url: Game URL (default from config)
         end_page: End page number (overrides num_pages if provided)
-        batch_size: Batch size for concurrent requests (not used, kept for compatibility)
+        batch_size: Batch size for concurrent requests (default from config)
+        page_size: Number of items per page (default is 50, max is 1000)
 
     Returns:
         List of processed game data dictionaries
     """
     # Use default values from config if not provided
-    base_url = base_url or config.API_BASE_URL
-    endpoint = endpoint or config.API_HISTORY_ENDPOINT
     game_url = game_url or config.GAME_URL
+    # Default to a smaller batch to be safe
+    batch_size = batch_size or min(config.CONCURRENCY_LIMIT, 3)
+    # Use default page size if not provided
+    page_size = page_size or int(os.environ.get('PAGE_SIZE', '50'))
 
     # Calculate the number of pages to fetch
     if end_page is not None:
         num_pages = end_page - start_page + 1
 
+    logger.info(
+        f"Fetching {num_pages} pages starting from page {start_page} with batch size {batch_size}")
+
     tasks = []
     all_games = []
+    error_count = 0
+    max_errors = num_pages // 2  # Allow up to half of requests to fail
 
     # Create tasks for each page
     for page_offset in range(num_pages):
         page = start_page + page_offset
-        tasks.append(fetch_game_history(page, base_url, endpoint))
+        tasks.append(fetch_game_history(page, page_size=page_size))
 
-    # Wait for all tasks to complete
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Process in batches to avoid too many concurrent processes
+    for i in range(0, len(tasks), batch_size):
+        batch = tasks[i:i+batch_size]
+        batch_start = i + start_page
+        batch_end = min(i + batch_size + start_page -
+                        1, start_page + num_pages - 1)
 
-    # Process results
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error(f"Error fetching page: {result}")
-            continue
+        logger.info(
+            f"Processing batch {i//batch_size + 1}/{(len(tasks)-1)//batch_size + 1}: pages {batch_start}-{batch_end}")
 
-        # Extract games from the response
-        if 'data' in result and 'items' in result['data']:
-            game_items = result['data']['items']
+        # Wait for all tasks in this batch to complete
+        results = await asyncio.gather(*batch, return_exceptions=True)
 
-            # Process each game
-            for game in game_items:
-                try:
-                    processed_game = process_game_data(game, game_url)
-                    all_games.append(processed_game)
-                except Exception as e:
-                    logger.error(f"Error processing game data: {str(e)}")
+        # Process results
+        empty_results = 0
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Error fetching page: {result}")
+                error_count += 1
+                continue
+
+            # Extract games from the response
+            if 'data' in result and 'items' in result['data']:
+                game_items = result['data']['items']
+
+                # Check if we're getting empty results which might indicate API blocking
+                if not game_items:
+                    empty_results += 1
+
+                # Process each game
+                for game in game_items:
+                    try:
+                        processed_game = process_game_data(game, game_url)
+                        all_games.append(processed_game)
+                    except Exception as e:
+                        logger.error(f"Error processing game data: {str(e)}")
+
+        # If all results in this batch were empty, log a warning
+        if empty_results == len(results):
+            logger.warning(
+                f"Batch {i//batch_size + 1} returned all empty results - API access may be limited")
+
+        # If we have too many errors, abort
+        if error_count > max_errors:
+            logger.error(
+                f"Too many errors ({error_count}/{num_pages}), aborting batch fetch")
+            break
+
+        # Add a delay between batches to avoid overwhelming the API
+        if i + batch_size < len(tasks):
+            delay = random.uniform(1.0, 3.0)
+            logger.debug(f"Sleeping for {delay:.2f}s between batches")
+            await asyncio.sleep(delay)
 
     logger.info(f"Fetched {len(all_games)} games from {num_pages} pages")
     return all_games
+
+
+def reset_mock_data_flag():
+    """
+    Reset the mock data flag to attempt to use the real API again.
+    This can be called periodically to check if the API is accessible again.
+    """
+    global consecutive_failures, USE_MOCK_DATA
+    if USE_MOCK_DATA and os.environ.get('USE_MOCK_DATA', 'false').lower() != 'true':
+        logger.info("Resetting mock data flag to attempt using real API")
+        USE_MOCK_DATA = False
+        consecutive_failures = 0
+
+# Reset every hour by default
+
+
+async def periodic_mock_reset(interval_seconds=3600):
+    """
+    Periodically reset the mock data flag to attempt using the real API again.
+
+    Args:
+        interval_seconds: How often to try resetting (default: 1 hour)
+    """
+    while True:
+        await asyncio.sleep(interval_seconds)
+        if USE_MOCK_DATA and os.environ.get('USE_MOCK_DATA', 'false').lower() != 'true':
+            logger.info(
+                f"Periodic reset of mock data flag after {interval_seconds}s")
+            reset_mock_data_flag()

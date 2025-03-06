@@ -35,7 +35,7 @@ API_HEADERS = {
 }
 
 # Page size for API requests (number of games per page)
-PAGE_SIZE = int(get_env_var('PAGE_SIZE', '100'))
+PAGE_SIZE = int(get_env_var('PAGE_SIZE', '20'))
 
 # Calculation settings
 BC_GAME_SALT = get_env_var('BC_GAME_SALT', '')
@@ -47,6 +47,8 @@ RETRY_INTERVAL = int(get_env_var('RETRY_INTERVAL', '10')
                      )  # Retry interval in seconds
 MAX_HISTORY_SIZE = int(get_env_var(
     'MAX_HISTORY_SIZE', '1000'))  # Max history size
+# Maximum number of concurrent shell script executions
+CONCURRENCY_LIMIT = int(get_env_var('CONCURRENCY_LIMIT', '5'))
 
 # Logging settings
 LOG_LEVEL = get_env_var('LOG_LEVEL', 'INFO').upper()
@@ -59,7 +61,8 @@ DATABASE_URL = get_env_var(
 # Catchup settings
 CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
 CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
-CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '100'))
+CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '5'))
+CATCHUP_PAGE_SIZE = int(get_env_var('CATCHUP_PAGE_SIZE', '20'))
 
 # Timezone settings
 TIMEZONE = get_env_var('TIMEZONE', 'UTC')
@@ -119,7 +122,7 @@ def reload_config():
     global POLL_INTERVAL, RETRY_INTERVAL, MAX_HISTORY_SIZE
     global LOG_LEVEL
     global DATABASE_ENABLED, DATABASE_URL
-    global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE
+    global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE, CATCHUP_PAGE_SIZE
     global TIMEZONE
     global APP_NAME, APP_VERSION
 
@@ -162,6 +165,7 @@ def reload_config():
     CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
     CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
     CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '20'))
+    CATCHUP_PAGE_SIZE = int(get_env_var('CATCHUP_PAGE_SIZE', '20'))
 
     # Timezone settings
     TIMEZONE = get_env_var('TIMEZONE', 'UTC')
