@@ -428,6 +428,36 @@ class BCCrashMonitor:
         else:
             return list(self.latest_hashes)[-limit:]
 
+    def load_history(self):
+        """Load crash history from local history file."""
+        try:
+            history_file = os.path.join(os.path.dirname(
+                os.path.dirname(__file__)), "crash_history.json")
+            if not os.path.exists(history_file):
+                self.logger.warning(f"History file {history_file} not found")
+                return None
+
+            # Check if file is too old (> 1 hour)
+            file_age = time.time() - os.path.getmtime(history_file)
+            if file_age > 3600:  # 1 hour in seconds
+                self.logger.warning(
+                    f"History file is {file_age/3600:.1f} hours old, may be stale")
+
+            with open(history_file, 'r') as f:
+                data = json.load(f)
+
+            if 'data' in data and 'items' in data['data']:
+                items = data['data']['items']
+                self.logger.info(
+                    f"Loaded {len(items)} items from history file")
+                return items
+            else:
+                self.logger.warning("History file has unexpected format")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error loading history file: {e}")
+            return None
+
 
 async def main():
     """Main entry point when run directly"""

@@ -4,7 +4,7 @@
 # Usage: ./get_recent_history.sh
 
 # Default arguments
-OUTPUT_FILE="recent_history.json"
+OUTPUT_FILE="${1:-api_recent_response.json}"
 ERROR_FILE="recent_api_error.html"
 TEMP_DIR="temp"
 COOKIES_FILE="cf_cookies.txt"

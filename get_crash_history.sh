@@ -6,7 +6,7 @@
 # Default arguments
 PAGE="${1:-1}"
 SIZE="${2:-50}"
-OUTPUT_FILE="crash_history.json"
+OUTPUT_FILE="${3:-api_response.json}"
 ERROR_FILE="api_error.html"
 TEMP_DIR="temp"
 COOKIES_FILE="cf_cookies.txt"
