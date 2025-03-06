@@ -131,65 +131,90 @@ async def bulk_store_crash_games(games_data: List[Dict[str, Any]]) -> List[str]:
         prepared_games = []
 
         for game_data in games_data:
-            # Extract required fields
-            game_id = game_data.get('game_id')
-            hash_value = game_data.get('hash')
-            crash_point = game_data.get('crash_point')
-            calculated_point = game_data.get('calculated_point')
+            try:
+                # Extract required fields
+                game_id = game_data.get('game_id')
+                hash_value = game_data.get('hash')
+                crash_point = game_data.get('crash_point')
+                calculated_point = game_data.get('calculated_point')
 
-            # Prepare data for database
-            db_game_data = {
-                "gameId": game_id,
-                "hashValue": hash_value,
-                "crashPoint": crash_point,
-                "calculatedPoint": calculated_point,
-            }
+                # Skip if missing required fields
+                if not game_id or not hash_value or not crash_point:
+                    logger.warning(
+                        f"Skipping game with incomplete data: {game_data}")
+                    continue
 
-            # Extract timing info if available
-            game_detail = {}
-            if 'game_detail' in game_data and game_data['game_detail']:
-                if isinstance(game_data['game_detail'], str):
-                    game_detail = json.loads(game_data['game_detail'])
-                else:
-                    game_detail = game_data['game_detail']
+                # Prepare data for database
+                db_game_data = {
+                    "gameId": game_id,
+                    "hashValue": hash_value,
+                    "crashPoint": crash_point,
+                    "calculatedPoint": calculated_point,
+                }
 
-            # Process end time
-            if 'endTime' in game_data and game_data['endTime']:
-                db_game_data["endTime"] = unix_to_datetime(
-                    game_data['endTime'])
-            elif 'endTime' in game_detail and game_detail['endTime']:
-                db_game_data["endTime"] = unix_to_datetime(
-                    game_detail['endTime'])
+                # Extract timing info if available
+                game_detail = {}
+                if 'game_detail' in game_data and game_data['game_detail']:
+                    if isinstance(game_data['game_detail'], str):
+                        try:
+                            game_detail = json.loads(game_data['game_detail'])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse game_detail for game {game_id}")
+                    else:
+                        game_detail = game_data['game_detail']
 
-            # Process prepare time
-            if 'prepareTime' in game_data and game_data['prepareTime']:
-                db_game_data["prepareTime"] = unix_to_datetime(
-                    game_data['prepareTime'])
-            elif 'prepareTime' in game_detail and game_detail['prepareTime']:
-                db_game_data["prepareTime"] = unix_to_datetime(
-                    game_detail['prepareTime'])
+                # Process end time
+                if 'endTime' in game_data and game_data['endTime']:
+                    db_game_data["endTime"] = unix_to_datetime(
+                        game_data['endTime'])
+                elif 'endTime' in game_detail and game_detail['endTime']:
+                    db_game_data["endTime"] = unix_to_datetime(
+                        game_detail['endTime'])
 
-            # Process begin time
-            if 'beginTime' in game_data and game_data['beginTime']:
-                db_game_data["beginTime"] = unix_to_datetime(
-                    game_data['beginTime'])
-            elif 'beginTime' in game_detail and game_detail['beginTime']:
-                db_game_data["beginTime"] = unix_to_datetime(
-                    game_detail['beginTime'])
+                # Process prepare time
+                if 'prepareTime' in game_data and game_data['prepareTime']:
+                    db_game_data["prepareTime"] = unix_to_datetime(
+                        game_data['prepareTime'])
+                elif 'prepareTime' in game_detail and game_detail['prepareTime']:
+                    db_game_data["prepareTime"] = unix_to_datetime(
+                        game_detail['prepareTime'])
 
-            prepared_games.append(db_game_data)
+                # Process begin time
+                if 'beginTime' in game_data and game_data['beginTime']:
+                    db_game_data["beginTime"] = unix_to_datetime(
+                        game_data['beginTime'])
+                elif 'beginTime' in game_detail and game_detail['beginTime']:
+                    db_game_data["beginTime"] = unix_to_datetime(
+                        game_detail['beginTime'])
+
+                # Set crashed floor if crash point is available
+                if 'crashPoint' in db_game_data and db_game_data['crashPoint'] is not None:
+                    db_game_data["crashedFloor"] = int(
+                        db_game_data['crashPoint'])
+
+                prepared_games.append(db_game_data)
+            except Exception as e:
+                logger.warning(f"Error preparing game data: {e}")
+                continue
 
         # Get database instance
         db = get_database()
 
         # Use bulk insert
-        stored_game_ids = db.bulk_add_crash_games(prepared_games)
-        logger.info(f"Bulk stored {len(stored_game_ids)} crash games")
-        return stored_game_ids
+        try:
+            stored_game_ids = db.bulk_add_crash_games(prepared_games)
+            logger.info(f"Bulk stored {len(stored_game_ids)} crash games")
+            return stored_game_ids
+        except Exception as e:
+            logger.error(f"Error bulk storing crash games: {str(e)}")
+            # Return an empty list instead of raising to prevent the entire process from failing
+            return []
 
     except Exception as e:
         logger.error(f"Error bulk storing crash games: {str(e)}")
-        raise
+        # Return empty list instead of raising
+        return []
 
 
 async def get_recent_games(limit: int = 10) -> List[CrashGame]:

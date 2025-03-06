@@ -153,8 +153,26 @@ class Database:
 
         session = self.get_session()
         added_game_ids = []
+        skipped_game_ids = []
 
         try:
+            # First, collect all game IDs we're trying to add
+            game_ids = [data.get('gameId')
+                        for data in games_data if data.get('gameId')]
+
+            # Then find all existing games in a single query to avoid autoflush issues
+            existing_game_ids = set()
+            if game_ids:
+                with session.no_autoflush:
+                    existing_games = session.query(CrashGame.gameId).filter(
+                        CrashGame.gameId.in_(game_ids)
+                    ).all()
+                    existing_game_ids = {
+                        game.gameId for game in existing_games}
+                    logger.debug(
+                        f"Found {len(existing_game_ids)} existing games in database")
+
+            # Now process each game with knowledge of what already exists
             for game_data in games_data:
                 game_id = game_data.get('gameId')
 
@@ -162,25 +180,63 @@ class Database:
                 if not game_id:
                     continue
 
-                # Check if game already exists
-                existing_game = session.query(CrashGame).filter(
-                    CrashGame.gameId == game_id
-                ).first()
-
-                if existing_game:
+                # Skip if game already exists (using our prefetched list)
+                if game_id in existing_game_ids:
                     logger.debug(
                         f"Game with ID {game_id} already exists, skipping")
+                    skipped_game_ids.append(game_id)
                     continue
 
-                # Create and add game
-                game = CrashGame(**game_data)
-                session.add(game)
-                added_game_ids.append(game_id)
+                try:
+                    # Create and add game
+                    game = CrashGame(**game_data)
+                    session.add(game)
+                    added_game_ids.append(game_id)
+                except Exception as e:
+                    logger.warning(f"Error adding game {game_id}: {str(e)}")
+                    # Continue with other games instead of failing the whole batch
+                    continue
 
             # Commit all changes at once
-            session.commit()
-            logger.info(f"Added {len(added_game_ids)} new games in bulk")
-            return added_game_ids
+            try:
+                session.commit()
+                logger.info(
+                    f"Added {len(added_game_ids)} new games in bulk (skipped {len(skipped_game_ids)})")
+                return added_game_ids
+            except SQLAlchemyError as e:
+                # Handle the case where commit fails due to unique constraint violations
+                if 'UniqueViolation' in str(e) or 'duplicate key' in str(e):
+                    logger.warning(
+                        f"Unique constraint violation during bulk commit, will retry individually")
+                    session.rollback()
+
+                    # Retry adding games one by one to avoid losing all games in the batch
+                    added_game_ids = []
+                    for game_data in games_data:
+                        game_id = game_data.get('gameId')
+                        if not game_id or game_id in existing_game_ids:
+                            continue
+
+                        try:
+                            with session.begin_nested():  # Use savepoint for each game
+                                game = CrashGame(**game_data)
+                                session.add(game)
+                                session.flush()  # Flush each game individually
+                                added_game_ids.append(game_id)
+                        except SQLAlchemyError:
+                            # Skip this game if it causes a constraint violation
+                            logger.debug(
+                                f"Skipping game {game_id} due to constraint violation")
+                            continue
+
+                    # Final commit for the successful games
+                    session.commit()
+                    logger.info(
+                        f"Added {len(added_game_ids)} new games individually after bulk failure")
+                    return added_game_ids
+                else:
+                    # For other types of errors, just re-raise
+                    raise
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Error in bulk adding crash games: {str(e)}")
