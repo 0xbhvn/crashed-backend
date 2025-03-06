@@ -6,13 +6,15 @@ fetching and processing crash game data from the BC Game API.
 """
 
 import json
-import asyncio
+import time
 import hmac
 import math
-import logging
-from datetime import datetime
-from collections import deque
+import random
 import hashlib
+import logging
+import asyncio
+from datetime import datetime, timedelta
+from collections import deque
 from typing import List, Dict, Any, Callable, Awaitable, Optional
 import pytz
 import os
@@ -134,66 +136,121 @@ class BCCrashMonitor:
         """Fetch crash game history from the BC Game API using the utility function"""
         self.logger.debug("Fetching crash history from API...")
 
-        try:
-            # Instead of using the utility function that uses shell script,
-            # use the direct import of use_cf_cookies like in the catchup process
-            use_cf_cookies_path = os.path.join(os.path.dirname(
-                os.path.dirname(__file__)), "use_cf_cookies.py")
+        # Track if we've already attempted to refresh cookies in this call
+        cookie_refresh_attempted = False
 
-            if os.path.exists(use_cf_cookies_path):
-                # Add the project root to sys.path if it's not already there
-                project_root = os.path.dirname(os.path.dirname(__file__))
-                if project_root not in sys.path:
-                    sys.path.append(project_root)
+        while True:  # Add a retry loop
+            try:
+                # Try to import and use the direct method with cookies first
+                use_cf_cookies_path = os.path.join(os.path.dirname(
+                    os.path.dirname(__file__)), "use_cf_cookies.py")
 
-                # Try to import functions directly
-                try:
-                    # Using importlib to import the module dynamically
-                    import importlib.util
-                    spec = importlib.util.spec_from_file_location(
-                        "use_cf_cookies", use_cf_cookies_path)
-                    cf_cookies_module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(cf_cookies_module)
+                if os.path.exists(use_cf_cookies_path):
+                    # Add the project root to sys.path if it's not already there
+                    project_root = os.path.dirname(os.path.dirname(__file__))
+                    if project_root not in sys.path:
+                        sys.path.append(project_root)
 
-                    # Now use the imported function
-                    self.logger.info(
-                        f"Using direct import of use_cf_cookies for monitoring")
-                    data = cf_cookies_module.fetch_game_history(
-                        page=1, page_size=50)
+                    # Try to import functions directly
+                    try:
+                        # Using importlib to import the module dynamically
+                        import importlib.util
+                        spec = importlib.util.spec_from_file_location(
+                            "use_cf_cookies", use_cf_cookies_path)
+                        cf_cookies_module = importlib.util.module_from_spec(
+                            spec)
+                        spec.loader.exec_module(cf_cookies_module)
 
-                    # Convert to expected format if needed
-                    if 'data' in data and 'list' in data['data']:
-                        converted_data = {
-                            'data': {
-                                'items': data['data']['list']
+                        # Now use the imported function
+                        self.logger.info(
+                            f"Using direct import of use_cf_cookies for monitoring")
+                        data = cf_cookies_module.fetch_game_history(
+                            page=1, page_size=50)
+
+                        # Convert to expected format if needed
+                        if 'data' in data and 'list' in data['data']:
+                            converted_data = {
+                                'data': {
+                                    'items': data['data']['list']
+                                }
                             }
-                        }
-                        return converted_data
-                    return data
+                            return converted_data
+                        return data
 
-                except Exception as e:
-                    self.logger.warning(
-                        f"Error importing use_cf_cookies directly: {e}")
-                    # Fall back to original method
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Error importing use_cf_cookies directly: {e}")
 
-            # Fall back to the utility function if direct import fails
-            # Use the utility function to fetch game history
-            game_list = await fetch_game_history(
-                base_url=self.api_base_url,
-                endpoint=self.api_history_endpoint,
-                page=1
-            )
+                        # Check if it's a 403 Forbidden error (Cloudflare blocking)
+                        if "403" in str(e) and "Forbidden" in str(e) and not cookie_refresh_attempted:
+                            self.logger.warning(
+                                "API access blocked. Attempting to refresh Cloudflare cookies...")
+                            # Run Selenium script to get fresh cookies
+                            try:
+                                selenium_script_path = os.path.join(os.path.dirname(
+                                    os.path.dirname(__file__)), "selenium_bc_game.py")
 
-            self.logger.debug(
-                f"Successfully fetched {len(game_list)} crash history records")
-            return game_list
+                                if os.path.exists(selenium_script_path):
+                                    import subprocess
+                                    self.logger.info(
+                                        "Launching Selenium to refresh cookies...")
 
-        except APIError as e:
-            self.logger.error(f"API error fetching crash history: {e}")
-            return []
-        except Exception as e:
-            self.logger.error(f"Error fetching crash history: {e}")
-            return []
+                                    # Run the Selenium script non-blocking with automatic input
+                                    process = await asyncio.create_subprocess_exec(
+                                        sys.executable,
+                                        selenium_script_path,
+                                        stdin=asyncio.subprocess.PIPE,
+                                        stdout=asyncio.subprocess.PIPE,
+                                        stderr=asyncio.subprocess.PIPE
+                                    )
+
+                                    # Wait for script to indicate it's ready for input
+                                    # Give time for browser to navigate and solve challenges
+                                    await asyncio.sleep(45)
+
+                                    # Send Enter key to close browser
+                                    process.stdin.write(b'\n')
+                                    await process.stdin.drain()
+
+                                    # Wait for process to complete
+                                    stdout, stderr = await process.communicate()
+
+                                    if process.returncode == 0:
+                                        self.logger.info(
+                                            "Successfully refreshed cookies!")
+                                        cookie_refresh_attempted = True
+                                        # Retry the request with new cookies
+                                        continue
+                                    else:
+                                        self.logger.error(
+                                            f"Error refreshing cookies: {stderr.decode()}")
+                                else:
+                                    self.logger.error(
+                                        f"Selenium script not found at {selenium_script_path}")
+                            except Exception as selenium_e:
+                                self.logger.error(
+                                    f"Failed to run Selenium script: {selenium_e}")
+
+                        # Fall back to original method
+
+                # Fall back to the utility function if direct import fails
+                # Use the utility function to fetch game history
+                game_list = await fetch_game_history(
+                    base_url=self.api_base_url,
+                    endpoint=self.api_history_endpoint,
+                    page=1
+                )
+
+                self.logger.debug(
+                    f"Successfully fetched {len(game_list)} crash history records")
+                return game_list
+
+            except APIError as e:
+                self.logger.error(f"API error fetching crash history: {e}")
+                return []
+            except Exception as e:
+                self.logger.error(f"Error fetching crash history: {e}")
+                return []
 
     async def poll_and_process(self) -> List[Dict[str, Any]]:
         """

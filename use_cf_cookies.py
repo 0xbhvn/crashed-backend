@@ -10,6 +10,7 @@ import logging
 import argparse
 import subprocess
 import requests
+import time
 from typing import Dict, Any, List
 
 # Configure logging
@@ -31,6 +32,15 @@ def get_cloudflare_cookies() -> Dict[str, str]:
         # Run the Selenium script to get cookies
         subprocess.run(
             ['./venv/bin/python', 'selenium_bc_game.py'], check=True)
+    else:
+        # Check cookie file age - warn if older than 1 hour
+        cookie_age = time.time() - os.path.getmtime(cookie_file)
+        if cookie_age > 3600:  # older than 1 hour (3600 seconds)
+            hours_old = cookie_age / 3600
+            logger.warning(
+                f"Cookie file is {hours_old:.1f} hours old and may be expired.")
+            logger.warning(
+                "If API calls fail, run ./refresh_cookies.py to refresh cookies.")
 
     # Now the cookie file should exist
     if os.path.exists(cookie_file):
