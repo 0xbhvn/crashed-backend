@@ -12,13 +12,21 @@ import requests
 import socket
 import platform
 from datetime import datetime
+from urllib.parse import urljoin
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('cookie_test')
+
+# Constants
+BASE_URL = "https://bc.game"
+HISTORY_URL = urljoin(BASE_URL, "/api/game/support/crash/history")
+RETRY_COUNT = 3
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIE_FILE = os.path.join(CURRENT_DIR, "cf_cookies.txt")
 
 
 def get_environment_info():
@@ -47,196 +55,160 @@ def get_environment_info():
         return {"error": str(e)}
 
 
-def get_cloudflare_cookies():
-    """Get Cloudflare cookies from the saved file."""
-    cookie_file = 'cf_cookies.txt'
-    cookies = {}
+def load_cookies():
+    """Load cookies from file."""
+    try:
+        if not os.path.exists(COOKIE_FILE):
+            logger.error(f"Cookie file not found: {COOKIE_FILE}")
+            return {}
 
-    if not os.path.exists(cookie_file):
-        logger.error(f"Cookie file {cookie_file} not found!")
-        return cookies
+        with open(COOKIE_FILE, "r") as f:
+            cookie_data = f.read().strip().split('\n')
 
-    # Check cookie file age
-    cookie_age_seconds = datetime.now().timestamp() - os.path.getmtime(cookie_file)
-    cookie_age_hours = cookie_age_seconds / 3600
-    logger.info(f"Cookie file age: {cookie_age_hours:.1f} hours old")
-
-    if cookie_age_hours > 24:
-        logger.warning(
-            f"Cookie file is more than 24 hours old! Cookies have likely expired.")
-
-    # Read cookies
-    with open(cookie_file, 'r') as f:
-        for line in f:
-            # Skip comment lines
-            if line.strip().startswith('#'):
+        cookies = {}
+        for line in cookie_data:
+            if not line or line.startswith('#'):
                 continue
 
-            if '=' in line:
-                name, value = line.strip().split('=', 1)
-                cookies[name] = value
+            parts = line.split('=', 1)
+            if len(parts) != 2:
+                logger.warning(f"Invalid cookie format: {line}")
+                continue
 
-    logger.info(f"Loaded {len(cookies)} cookies from {cookie_file}")
+            name, value = parts
+            cookies[name.strip()] = value.strip()
 
-    # Check if we have the key cookies
-    if 'cf_clearance' not in cookies:
-        logger.warning("Missing critical cookie: cf_clearance")
-    if 'cf_bm' not in cookies:
-        logger.warning("Missing cookie: cf_bm")
+        if not cookies:
+            logger.error("No valid cookies found in file")
+        else:
+            logger.info(f"Loaded {len(cookies)} cookies")
 
-    return cookies
+        return cookies
+
+    except Exception as e:
+        logger.error(f"Error loading cookies: {e}")
+        return {}
 
 
-def get_headers():
-    """Get headers to use for the request."""
-    # Try to load custom headers if they exist
-    headers_file = 'cf_headers.json'
-    if os.path.exists(headers_file):
-        try:
-            with open(headers_file, 'r') as f:
-                headers = json.load(f)
-            logger.info(f"Loaded custom headers from {headers_file}")
-            return headers
-        except Exception as e:
-            logger.warning(f"Error loading headers file: {e}")
-
-    # Default headers
-    return {
-        'accept': 'application/json, text/plain, */*',
-        'accept-language': 'en',
-        'content-type': 'application/json',
-        'dnt': '1',
-        'origin': 'https://bc.fun',
-        'referer': 'https://bc.fun/game/crash',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+def check_cookies(cookies):
+    """Test if the cookies work by making an API request."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": BASE_URL,
     }
 
+    if "cf_clearance" not in cookies:
+        logger.error("Missing cf_clearance cookie")
+    if "__cf_bm" not in cookies:
+        logger.warning("Missing __cf_bm cookie (may still work)")
 
-def test_cookies():
-    """Test if the Cloudflare cookies are working."""
-    try:
-        # Get environment info
-        env_info = get_environment_info()
-        logger.info(f"Environment: {json.dumps(env_info, indent=2)}")
+    success = False
 
-        # Get cookies
-        cookies = get_cloudflare_cookies()
-        if not cookies:
-            logger.error(
-                "No cookies found. Run add_cookies.py to add cookies.")
-            return False
+    for attempt in range(RETRY_COUNT):
+        try:
+            logger.info(
+                f"Testing cookies (attempt {attempt+1}/{RETRY_COUNT})...")
 
-        # Get headers
-        headers = get_headers()
+            response = requests.get(
+                HISTORY_URL,
+                headers=headers,
+                cookies=cookies,
+                timeout=10
+            )
 
-        # API endpoint
-        url = 'https://bc.fun/api/game/bet/multi/history'
+            logger.info(f"Response status code: {response.status_code}")
 
-        # Request payload
-        payload = {
-            'gameId': 'crashnormal',
-            'type': 'casino',
-            'timeRange': 0,
-            'clientSeed': 'test-cookies-script',
-            'page': 1,
-            'pageSize': 5  # Just request a few games to test
-        }
-
-        logger.info(f"Making test request to {url}")
-        logger.info(f"Headers: {json.dumps(headers, indent=2)}")
-        logger.info(
-            f"Cookies: {json.dumps({k: v[:10] + '...' for k, v in cookies.items()}, indent=2)}")
-
-        # Make the API request
-        response = requests.post(url, headers=headers,
-                                 cookies=cookies, json=payload)
-
-        # Log basic response info
-        logger.info(f"Response status code: {response.status_code}")
-        logger.info(
-            f"Response headers: {json.dumps(dict(response.headers), indent=2)}")
-
-        # Check if it's a Cloudflare challenge response
-        if "Just a moment" in response.text or "Checking if the site connection is secure" in response.text:
-            logger.error(
-                "FAILED: Received Cloudflare challenge response. Cookies are not working!")
-            logger.info("Response content preview:")
-            logger.info(response.text[:500] + "...")
-            return False
-
-        # Check if successful
-        if response.status_code == 200:
-            try:
-                data = response.json()
-
-                # Check for API errors
-                if 'success' in data and not data['success']:
+            if response.status_code == 200:
+                try:
+                    json_data = response.json()
+                    if 'data' in json_data and 'items' in json_data['data']:
+                        game_count = len(json_data['data']['items'])
+                        logger.info(f"Success! Retrieved {game_count} games")
+                        success = True
+                        break
+                    else:
+                        logger.error(f"Invalid response format: {json_data}")
+                except json.JSONDecodeError:
+                    logger.error("Response is not valid JSON")
+                    if "Cloudflare" in response.text or "challenge" in response.text:
+                        logger.error(
+                            "Received Cloudflare challenge - cookies are invalid or expired")
+            else:
+                logger.error(f"Error response: {response.status_code}")
+                if response.status_code == 403:
                     logger.error(
-                        f"API returned error: {data.get('msg', 'Unknown error')}")
-                    return False
+                        "Forbidden (403) - Cookies are invalid or expired")
+                    # Print the first 200 characters of the response for debugging
+                    logger.debug(f"Response preview: {response.text[:200]}...")
 
-                # Check if we got game data
-                if 'data' in data:
-                    if 'list' in data['data']:
-                        games_count = len(data['data']['list'])
+        except requests.RequestException as e:
+            logger.error(f"Request error: {e}")
+
+        if not success and attempt < RETRY_COUNT - 1:
+            logger.info(f"Retrying in 2 seconds...")
+            import time
+            time.sleep(2)
+
+    return success
+
+
+def check_cookie_expiry(cookies):
+    """Estimate cookie expiry based on known patterns."""
+    if 'cf_clearance' in cookies:
+        # Try to extract timestamp from cf_clearance
+        try:
+            parts = cookies['cf_clearance'].split('-')
+            for part in parts:
+                # Look for 10-digit unix timestamp
+                if part.isdigit() and len(part) == 10:
+                    timestamp = int(part)
+                    expiry_time = datetime.datetime.fromtimestamp(timestamp)
+                    now = datetime.datetime.now()
+
+                    # Typical Cloudflare cookies last 30 days
+                    if expiry_time > now:
+                        days_remaining = (expiry_time - now).days
                         logger.info(
-                            f"SUCCESS: Retrieved {games_count} games in 'list' format")
-
-                        # Show a sample of the data
-                        if games_count > 0:
-                            logger.info(
-                                f"Sample game data: {json.dumps(data['data']['list'][0], indent=2)}")
-
-                        return True
-                    elif 'items' in data['data']:
-                        games_count = len(data['data']['items'])
-                        logger.info(
-                            f"SUCCESS: Retrieved {games_count} games in 'items' format")
-
-                        # Show a sample of the data
-                        if games_count > 0:
-                            logger.info(
-                                f"Sample game data: {json.dumps(data['data']['items'][0], indent=2)}")
-
-                        return True
+                            f"Cookie appears to expire on {expiry_time} (in ~{days_remaining} days)")
                     else:
                         logger.warning(
-                            "Response contains 'data' key but no game list/items")
-                        logger.info(
-                            f"Response data: {json.dumps(data, indent=2)}")
-                        return False
-                else:
-                    logger.warning("Response does not contain 'data' key")
-                    logger.info(f"Response data: {json.dumps(data, indent=2)}")
-                    return False
-            except json.JSONDecodeError:
-                logger.error("Failed to parse JSON response")
-                logger.info("Response content preview:")
-                logger.info(response.text[:500] + "...")
-                return False
-        else:
-            logger.error(
-                f"Request failed with status code {response.status_code}")
-            logger.info("Response content preview:")
-            logger.info(response.text[:500] + "...")
-            return False
-    except Exception as e:
-        logger.error(f"Error testing cookies: {e}")
+                            f"Cookie appears to have expired on {expiry_time}")
+
+                    return
+        except Exception as e:
+            logger.debug(f"Could not determine expiry: {e}")
+
+    logger.info("Could not determine cookie expiry time")
+
+
+def main():
+    """Main function to test cookies."""
+    logger.info("=== BC Game Cookie Tester ===")
+
+    # Load cookies
+    cookies = load_cookies()
+    if not cookies:
+        logger.error("No cookies loaded. Please add cookies to cf_cookies.txt")
+        return False
+
+    # Check expiry (best effort)
+    check_cookie_expiry(cookies)
+
+    # Test the cookies
+    success = check_cookies(cookies)
+
+    if success:
+        logger.info("✅ Cookies are working correctly!")
+        return True
+    else:
+        logger.error(
+            "❌ Cookies are NOT working. They may have expired or are invalid.")
+        logger.info("Please run add_cookies.py to update them.")
         return False
 
 
 if __name__ == "__main__":
-    logger.info("Starting cookie test...")
-    if test_cookies():
-        logger.info(
-            "✅ Cookies are working! You should be able to access the BC Game API.")
-    else:
-        logger.error("❌ Cookies test failed. See errors above for details.")
-        logger.error("Try running add_cookies.py to add new cookies.")
-        sys.exit(1)
+    success = main()
+    sys.exit(0 if success else 1)

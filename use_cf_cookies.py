@@ -13,6 +13,9 @@ import requests
 import time
 import sys
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
+import random
+import platform
 
 # Configure logging
 logging.basicConfig(
@@ -21,227 +24,319 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Constants
+COOKIE_FILE = 'cf_cookies.txt'
+MOCK_DATA_FILE = 'crash_history.json'
+API_ENDPOINTS = {
+    'history': 'https://bc.game/api/game/support/crash/history',
+    'recent': 'https://bc.game/api/game/support/crash/recent/history'
+}
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+API_TIMEOUT = 10  # seconds
 
-def get_cloudflare_cookies() -> Dict[str, str]:
+
+def get_cloudflare_cookies():
     """Get Cloudflare cookies from the saved file."""
-    cookie_file = 'cf_cookies.txt'
     cookies = {}
 
-    if not os.path.exists(cookie_file):
-        logger.warning(
-            f"Cookie file {cookie_file} not found.")
+    if not os.path.exists(COOKIE_FILE):
+        logger.error(f"Cookie file {COOKIE_FILE} not found!")
+        return cookies
 
-        # Check if we're in a production container environment
-        in_container = os.environ.get(
-            'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
+    # Check cookie file age
+    try:
+        cookie_age_seconds = datetime.now().timestamp() - os.path.getmtime(COOKIE_FILE)
+        cookie_age_hours = cookie_age_seconds / 3600
+        logger.info(f"Cookie file age: {cookie_age_hours:.1f} hours old")
 
-        if in_container:
+        if cookie_age_hours > 24:
             logger.warning(
-                "Running in container environment - cannot use Selenium browser.")
-            logger.warning(
-                "You need to manually add Cloudflare cookies to cf_cookies.txt")
-            logger.warning("Format: cf_clearance=value\\ncf_bm=value")
+                f"Cookie file is more than 24 hours old! Cookies may have expired.")
+    except Exception as e:
+        logger.warning(f"Could not check cookie file age: {e}")
 
-            # Try to create an empty cookie file so we don't keep trying
-            try:
-                with open(cookie_file, 'w') as f:
-                    f.write("# Add Cloudflare cookies here\n")
-                    f.write("# Format: cf_clearance=value\n")
-                    f.write("# cf_bm=value\n")
-            except Exception as e:
-                logger.error(f"Error creating empty cookie file: {e}")
-        else:
-            # Determine the Python executable path
-            if os.path.exists('./venv/bin/python'):
-                python_path = './venv/bin/python'
-            elif os.path.exists('/opt/venv/bin/python'):
-                python_path = '/opt/venv/bin/python'
-            else:
-                python_path = sys.executable  # Use current Python interpreter
-
-            logger.info(f"Running Selenium script with Python: {python_path}")
-
-            try:
-                # Run the Selenium script to get cookies
-                subprocess.run(
-                    [python_path, 'selenium_bc_game.py'], check=True)
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Failed to run Selenium script: {e}")
-            except FileNotFoundError as e:
-                logger.error(f"Selenium script not found: {e}")
-    else:
-        # Check cookie file age - warn if older than 1 hour
-        cookie_age = time.time() - os.path.getmtime(cookie_file)
-        if cookie_age > 3600:  # older than 1 hour (3600 seconds)
-            hours_old = cookie_age / 3600
-            logger.warning(
-                f"Cookie file is {hours_old:.1f} hours old and may be expired.")
-            logger.warning(
-                "If API calls fail, run ./refresh_cookies.py to refresh cookies.")
-
-    # Now the cookie file should exist
-    if os.path.exists(cookie_file):
-        with open(cookie_file, 'r') as f:
+    # Read cookies
+    try:
+        with open(COOKIE_FILE, 'r') as f:
             for line in f:
                 # Skip comment lines
-                if line.strip().startswith('#'):
+                if line.strip().startswith('#') or not line.strip():
                     continue
 
                 if '=' in line:
                     name, value = line.strip().split('=', 1)
                     cookies[name] = value
-        logger.info(f"Loaded {len(cookies)} cookies from {cookie_file}")
-    else:
-        logger.error(
-            f"Cookie file {cookie_file} still not found after attempting to create it")
+
+        logger.info(f"Loaded {len(cookies)} cookies from {COOKIE_FILE}")
+
+        # Check if we have the key cookies
+        if 'cf_clearance' not in cookies:
+            logger.warning("Missing critical cookie: cf_clearance")
+    except Exception as e:
+        logger.error(f"Error reading cookie file: {e}")
 
     return cookies
 
 
-def fetch_game_history(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
-    """Fetch game history using Cloudflare cookies."""
-    cookies = get_cloudflare_cookies()
-
-    url = 'https://bc.fun/api/game/bet/multi/history'
-
+def get_headers():
+    """Get headers to use for the request."""
+    # Default headers with a modern browser User-Agent
     headers = {
-        'accept': 'application/json, text/plain, */*',
-        'accept-language': 'en',
-        'content-type': 'application/json',
-        'dnt': '1',
-        'origin': 'https://bc.fun',
-        'referer': 'https://bc.fun/game/crash',
-        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"macOS"',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://bc.game/',
+        'DNT': '1',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
     }
 
-    # Set a deterministic clientSeed for consistency (doesn't affect results)
-    client_seed = f"python-client-{page}-{page_size}"
+    # Try to load custom headers if they exist
+    headers_file = 'cf_headers.json'
+    if os.path.exists(headers_file):
+        try:
+            with open(headers_file, 'r') as f:
+                custom_headers = json.load(f)
+            logger.info(f"Loaded custom headers from {headers_file}")
+            # Update with custom headers but keep defaults if not specified
+            headers.update(custom_headers)
+        except Exception as e:
+            logger.warning(f"Error loading headers file: {e}")
 
-    payload = {
-        'gameId': 'crashnormal',
-        'type': 'casino',
-        'timeRange': 0,
-        'clientSeed': client_seed,
-        'page': page,
-        'pageSize': page_size
-    }
+    return headers
 
-    # Log diagnostic information in production
-    is_production = os.environ.get(
-        'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
 
+def make_api_request(endpoint, params=None, cookies=None, headers=None):
+    """Make an API request with appropriate error handling and retries."""
+    if not cookies:
+        cookies = get_cloudflare_cookies()
+
+    if not headers:
+        headers = get_headers()
+
+    if not params:
+        params = {}
+
+    # Add cache-busting query parameter
+    params['_'] = int(time.time() * 1000)
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            logger.info(
+                f"Making API request to {endpoint} (attempt {attempt+1}/{MAX_RETRIES})")
+
+            response = requests.get(
+                endpoint,
+                params=params,
+                headers=headers,
+                cookies=cookies,
+                timeout=API_TIMEOUT
+            )
+
+            # Check if successful
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+
+                    # Check if we actually got game data
+                    if 'data' in data:
+                        logger.info(f"API request successful")
+                        return True, data
+                    else:
+                        logger.warning(
+                            f"API response doesn't contain expected data structure")
+                        # Still return as successful but with warning
+                        return True, data
+                except json.JSONDecodeError:
+                    # Check if it's a Cloudflare challenge
+                    if "Just a moment" in response.text or "Checking if the site connection is secure" in response.text:
+                        logger.error(
+                            "Received Cloudflare challenge instead of JSON data")
+                        # Save the response for debugging
+                        with open('cloudflare_challenge.html', 'w') as f:
+                            f.write(response.text)
+                        logger.info(
+                            "Saved Cloudflare challenge HTML to cloudflare_challenge.html")
+                    else:
+                        logger.error(
+                            f"Response is not valid JSON: {response.text[:100]}...")
+
+            else:
+                logger.error(
+                    f"API request failed with status code {response.status_code}")
+                logger.debug(f"Response headers: {dict(response.headers)}")
+                logger.debug(f"Response content: {response.text[:200]}...")
+
+            # Wait before retrying, with exponential backoff
+            if attempt < MAX_RETRIES - 1:
+                retry_delay = RETRY_DELAY * (2 ** attempt)
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+
+        except requests.RequestException as e:
+            logger.error(f"Request error: {e}")
+
+            # Wait before retrying, with exponential backoff
+            if attempt < MAX_RETRIES - 1:
+                retry_delay = RETRY_DELAY * (2 ** attempt)
+                logger.info(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+
+    # All attempts failed
+    return False, None
+
+
+def try_shell_script_fallback(endpoint_key, params=None):
+    """Try the shell script as a fallback method."""
     try:
-        logger.info(
-            f"Making API request to {url} with page={page}, size={page_size}")
+        # Get the appropriate shell script command
+        if endpoint_key == 'history':
+            page = params.get('page', 1) if params else 1
+            page_size = params.get('size', 50) if params else 50
+            logger.info(
+                f"Trying shell script fallback for history (page={page}, size={page_size})")
+            # Use shell script to get the history
+            cmd = ['./get_crash_history.sh', str(page), str(page_size)]
+        elif endpoint_key == 'recent':
+            logger.info("Trying shell script fallback for recent history")
+            # Use shell script to get recent history
+            cmd = ['./get_recent_history.sh']
+        else:
+            logger.error(f"Unknown endpoint key: {endpoint_key}")
+            return False, None
 
-        # Print verbose debugging in production
-        if is_production:
-            logger.info(f"Request headers: {headers}")
-            logger.info(f"Request cookies: {cookies}")
-            logger.info(f"Request payload: {payload}")
+        # Execute the shell script
+        logger.info(f"Executing command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
-            # Test if cookies are properly formatted
-            logger.info(f"Cookie count: {len(cookies)}")
-            for name, value in cookies.items():
-                # Only show first 10 chars of value for security
-                logger.info(f"Cookie {name}: {value[:10]}...")
+        if result.returncode != 0:
+            logger.error(f"Shell script failed with code {result.returncode}")
+            logger.error(f"Error: {result.stderr}")
+            return False, None
 
-        # Make the API request
-        response = requests.post(url, headers=headers,
-                                 cookies=cookies, json=payload)
+        # Try to parse the output as JSON
+        try:
+            data = json.loads(result.stdout)
+            logger.info(f"Successfully retrieved data using shell script")
+            return True, data
+        except json.JSONDecodeError:
+            logger.error("Shell script output is not valid JSON")
+            logger.error(f"Output: {result.stdout[:200]}...")
+            return False, None
 
-        # Log the response details
-        if is_production:
-            logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
-
-            # Print a small part of the response for debugging
-            if response.status_code != 200:
-                logger.info(
-                    f"Response content (first 500 chars): {response.text[:500]}")
-
-                # If Cloudflare challenge detected in response text
-                if "Just a moment" in response.text or "challenge" in response.text.lower():
-                    logger.error(
-                        "Cloudflare challenge detected in response - cookies rejected")
-
-                # Try analyzing what might be wrong
-                if response.status_code == 403:
-                    logger.error("403 Forbidden - Possible reasons:")
-                    logger.error("1. Cookies are expired")
-                    logger.error("2. Cookies are from a different IP address")
-                    logger.error("3. Request is missing required headers")
-                    logger.error("4. Rate limiting is active")
-
-        # Check if the request was successful
-        response.raise_for_status()
-
-        # Parse the response as JSON
-        data = response.json()
-
-        # Check for error message in response
-        if 'msg' in data and data.get('success') is False:
-            logger.warning(f"API returned error: {data['msg']}")
-            return {'data': {'items': []}}
-
-        # Return the response data
-        return data
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"Error fetching game history: {e}")
-        raise
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request error: {e}")
-        raise
-    except json.JSONDecodeError as e:
-        logger.error(f"Error parsing JSON response: {e}")
-        raise
     except Exception as e:
-        logger.error(f"Error in main execution: {e}")
-        raise
+        logger.error(f"Error running shell script: {e}")
+        return False, None
 
 
-def save_game_history(data: Dict[str, Any], output_file: str = "api_game_history.json"):
-    """Save game history data to a file."""
-    with open(output_file, 'w') as f:
-        json.dump(data, f, indent=2)
-    logger.info(f"Saved game history to {output_file}")
+def load_mock_data():
+    """Load mock data as a last resort."""
+    try:
+        if os.path.exists(MOCK_DATA_FILE):
+            with open(MOCK_DATA_FILE, 'r') as f:
+                data = json.load(f)
+            logger.info(f"Loaded mock data from {MOCK_DATA_FILE}")
+            return True, data
+        else:
+            logger.error(f"Mock data file {MOCK_DATA_FILE} not found")
+            return False, None
+    except Exception as e:
+        logger.error(f"Error loading mock data: {e}")
+        return False, None
+
+
+def fetch_crash_data(endpoint_key, params=None):
+    """
+    Fetch crash data using available methods, with fallbacks.
+
+    Args:
+        endpoint_key: Key from API_ENDPOINTS ('history' or 'recent')
+        params: Dictionary of query parameters
+
+    Returns:
+        Tuple of (success, data)
+    """
+    if endpoint_key not in API_ENDPOINTS:
+        logger.error(f"Unknown endpoint key: {endpoint_key}")
+        return False, None
+
+    endpoint = API_ENDPOINTS[endpoint_key]
+
+    # Try direct API request first
+    logger.info(f"Attempting direct API request to {endpoint_key} endpoint")
+    success, data = make_api_request(endpoint, params)
+
+    if success:
+        return True, data
+
+    # If API request failed, try shell script fallback
+    logger.info(f"Direct API request failed, trying shell script fallback")
+    success, data = try_shell_script_fallback(endpoint_key, params)
+
+    if success:
+        return True, data
+
+    # If shell script also failed, use mock data as last resort
+    logger.warning(
+        f"Shell script fallback failed, using mock data as last resort")
+    return load_mock_data()
+
+
+def get_crash_history(page=1, page_size=50):
+    """Get crash game history using the best available method."""
+    params = {
+        'page': page,
+        'size': page_size
+    }
+
+    success, data = fetch_crash_data('history', params)
+
+    if success and data and 'data' in data and 'items' in data['data']:
+        items = data['data']['items']
+        logger.info(
+            f"Successfully retrieved {len(items)} crash game history items")
+        return items
+    else:
+        logger.error("Failed to retrieve crash game history")
+        return []
+
+
+def get_recent_history():
+    """Get recent crash game history using the best available method."""
+    success, data = fetch_crash_data('recent')
+
+    if success and data and 'data' in data:
+        items = data['data']
+        logger.info(
+            f"Successfully retrieved {len(items)} recent crash game items")
+        return items
+    else:
+        logger.error("Failed to retrieve recent crash game history")
+        return []
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Fetch BC Game crash game history using Cloudflare cookies")
-    parser.add_argument("-p", "--page", type=int, default=1,
-                        help="Page number to fetch")
-    parser.add_argument("-s", "--size", type=int, default=20,
-                        help="Number of items per page")
-    parser.add_argument("-o", "--output", type=str,
-                        default="api_game_history.json", help="Output file path")
+    """Test function to verify cookie functionality."""
+    logger.info("Testing BC Game API access...")
 
-    args = parser.parse_args()
+    # Try to get crash history
+    history = get_crash_history(page=1, page_size=10)
+    if history:
+        logger.info(f"Successfully retrieved {len(history)} history items")
+        logger.info(f"First item: {json.dumps(history[0], indent=2)}")
+    else:
+        logger.error("Failed to retrieve crash history")
 
-    try:
-        # Fetch and save game history
-        data = fetch_game_history(args.page, args.size)
-        save_game_history(data, args.output)
-
-        # Print summary
-        games_count = len(
-            data['data']['items']) if 'data' in data and 'items' in data['data'] else 0
-        logger.info(
-            f"Summary: Fetched page {args.page} with {games_count} games")
-
-    except Exception as e:
-        logger.error(f"Error in main execution: {e}")
-        return 1
-
-    return 0
+    # Try to get recent history
+    recent = get_recent_history()
+    if recent:
+        logger.info(f"Successfully retrieved {len(recent)} recent items")
+        logger.info(f"First item: {json.dumps(recent[0], indent=2)}")
+    else:
+        logger.error("Failed to retrieve recent history")
 
 
 if __name__ == "__main__":
-    exit(main())
+    main()

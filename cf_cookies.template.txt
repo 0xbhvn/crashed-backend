@@ -1,0 +1,24 @@
+# Cloudflare cookies for BC Game API
+# This is a template file - copy to cf_cookies.txt and fill in the values
+
+# cf_clearance cookie - essential for bypassing Cloudflare protection
+# Get this from your browser's developer tools after solving a Cloudflare challenge
+cf_clearance=YOUR_CF_CLEARANCE_VALUE_HERE
+
+# __cf_bm cookie - helps with Cloudflare protection but may not be required
+# This cookie is usually shorter-lived than cf_clearance
+__cf_bm=YOUR_CF_BM_VALUE_HERE
+
+# Instructions:
+# 1. Navigate to https://bc.game in your browser
+# 2. Open developer tools (F12 or right-click > Inspect)
+# 3. Go to Application tab > Cookies > https://bc.game
+# 4. Find the cf_clearance and __cf_bm cookies
+# 5. Copy the values and paste them above
+# 6. Run test_cookies.py to verify they work
+
+# Note: Cookies are tied to:
+# - Your browser fingerprint
+# - Your IP address
+# - They expire (typically within 24 hours to 30 days)
+# If the API stops working, you'll need to refresh these cookies 

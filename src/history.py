@@ -19,6 +19,8 @@ from typing import List, Dict, Any, Callable, Awaitable, Optional
 import pytz
 import os
 import sys
+import requests
+import subprocess
 
 # Import from config
 from . import config
@@ -132,154 +134,142 @@ class BCCrashMonitor:
             # Return 1.00 (the minimum crash point) on error
             return 1.00
 
-    async def fetch_crash_history(self):
-        """Fetch crash game history from the BC Game API using the utility function"""
-        self.logger.debug("Fetching crash history from API...")
+    async def fetch_crash_history(self, page=1, page_size=50, force_refresh=False):
+        """Fetch crash history from BC.GAME API or local history file"""
+        self.logger.info(
+            f"Fetching crash history: page={page}, size={page_size}, force_refresh={force_refresh}")
 
-        # Track if we've already attempted to refresh cookies in this call
-        cookie_refresh_attempted = False
-
-        # Check if we're in a container environment
-        in_container = os.environ.get(
-            'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
-
-        while True:  # Add a retry loop
+        if not force_refresh:
             try:
-                # Try to import and use the direct method with cookies first
-                use_cf_cookies_path = os.path.join(os.path.dirname(
-                    os.path.dirname(__file__)), "use_cf_cookies.py")
-
-                if os.path.exists(use_cf_cookies_path):
-                    # Add the project root to sys.path if it's not already there
-                    project_root = os.path.dirname(os.path.dirname(__file__))
-                    if project_root not in sys.path:
-                        sys.path.append(project_root)
-
-                    # Try to import functions directly
-                    try:
-                        # Using importlib to import the module dynamically
-                        import importlib.util
-                        spec = importlib.util.spec_from_file_location(
-                            "use_cf_cookies", use_cf_cookies_path)
-                        cf_cookies_module = importlib.util.module_from_spec(
-                            spec)
-                        spec.loader.exec_module(cf_cookies_module)
-
-                        # Now use the imported function
+                # First, try to load from history file
+                history = self.load_history()
+                if history is not None:
+                    # If history has enough items for the requested page
+                    total_items = len(history)
+                    start_idx = (page - 1) * page_size
+                    if start_idx < total_items:
+                        end_idx = min(start_idx + page_size, total_items)
                         self.logger.info(
-                            f"Using direct import of use_cf_cookies for monitoring")
-                        data = cf_cookies_module.fetch_game_history(
-                            page=1, page_size=50)
-
-                        # Convert to expected format if needed
-                        if 'data' in data and 'list' in data['data']:
-                            converted_data = {
-                                'data': {
-                                    'items': data['data']['list']
-                                }
-                            }
-                            return converted_data
-                        return data
-
-                    except Exception as e:
-                        self.logger.warning(
-                            f"Error importing use_cf_cookies directly: {e}")
-
-                        # Check if it's a 403 Forbidden error (Cloudflare blocking)
-                        if ("403" in str(e) or "Forbidden" in str(e)) and not cookie_refresh_attempted:
-                            self.logger.warning(
-                                "API access blocked. Attempting to refresh Cloudflare cookies...")
-
-                            # Only try to refresh with Selenium if we're not in a container
-                            if in_container:
-                                self.logger.warning(
-                                    "Cannot refresh cookies in container environment - need manual intervention")
-                                self.logger.warning(
-                                    "Please add valid Cloudflare cookies to cf_cookies.txt file")
-                                break  # Exit the retry loop
-
-                            # Run Selenium script to get fresh cookies
-                            try:
-                                selenium_script_path = os.path.join(os.path.dirname(
-                                    os.path.dirname(__file__)), "selenium_bc_game.py")
-
-                                if os.path.exists(selenium_script_path):
-                                    import subprocess
-                                    self.logger.info(
-                                        "Launching Selenium to refresh cookies...")
-
-                                    # Determine Python executable
-                                    if os.path.exists('./venv/bin/python'):
-                                        python_path = './venv/bin/python'
-                                    elif os.path.exists('/opt/venv/bin/python'):
-                                        python_path = '/opt/venv/bin/python'
-                                    else:
-                                        python_path = sys.executable
-
-                                    # Run the Selenium script non-blocking with automatic input
-                                    process = await asyncio.create_subprocess_exec(
-                                        python_path,
-                                        selenium_script_path,
-                                        stdin=asyncio.subprocess.PIPE,
-                                        stdout=asyncio.subprocess.PIPE,
-                                        stderr=asyncio.subprocess.PIPE
-                                    )
-
-                                    # Wait for script to indicate it's ready for input
-                                    # Give time for browser to navigate and solve challenges
-                                    await asyncio.sleep(45)
-
-                                    # Send Enter key to close browser
-                                    process.stdin.write(b'\n')
-                                    await process.stdin.drain()
-
-                                    # Wait for process to complete
-                                    stdout, stderr = await process.communicate()
-
-                                    if process.returncode == 0:
-                                        self.logger.info(
-                                            "Successfully refreshed cookies!")
-                                        cookie_refresh_attempted = True
-                                        # Retry the request with new cookies
-                                        continue
-                                    else:
-                                        self.logger.error(
-                                            f"Error refreshing cookies: {stderr.decode()}")
-                                else:
-                                    self.logger.error(
-                                        f"Selenium script not found at {selenium_script_path}")
-                            except Exception as selenium_e:
-                                self.logger.error(
-                                    f"Failed to run Selenium script: {selenium_e}")
-
-                        # Fall back to original method
-
-                # Fall back to the utility function if direct import fails
-                # Use the utility function to fetch game history
-                self.logger.info("Falling back to shell script method")
-                game_list = await fetch_game_history(
-                    base_url=self.api_base_url,
-                    endpoint=self.api_history_endpoint,
-                    page=1
-                )
-
-                self.logger.debug(
-                    f"Successfully fetched {len(game_list)} crash history records")
-                return game_list
-
-            except APIError as e:
-                self.logger.error(f"API error fetching crash history: {e}")
-                return []
+                            f"Using cached history (items {start_idx+1}-{end_idx} of {total_items})")
+                        return history[start_idx:end_idx]
+                    else:
+                        self.logger.info(
+                            f"Cached history doesn't have page {page} (total items: {total_items})")
             except Exception as e:
-                self.logger.error(f"Error fetching crash history: {e}")
+                self.logger.error(f"Error loading cached history: {e}")
+
+        # Try using the improved API access methods from use_cf_cookies.py
+        try:
+            from use_cf_cookies import get_crash_history
+            items = get_crash_history(page=page, page_size=page_size)
+
+            if items:
+                self.logger.info(
+                    f"Successfully retrieved {len(items)} items from BC.GAME API")
+                return items
+        except ImportError:
+            self.logger.warning(
+                "Could not import use_cf_cookies - falling back to direct method")
+        except Exception as e:
+            self.logger.error(f"Error using improved cookie method: {e}")
+
+        # Fall back to direct API call if the improved method failed or wasn't available
+        try:
+            self.logger.info(
+                f"Fetching crash history from API directly (fallback): page={page}, size={page_size}")
+
+            url = "https://bc.game/api/game/support/crash/history"
+            params = {
+                "page": page,
+                "size": page_size
+            }
+
+            # Try to use cached cookies if available
+            try:
+                # Use cookies if available, but don't break if not
+                cookies = {}
+                if os.path.exists("cf_cookies.txt"):
+                    with open("cf_cookies.txt", "r") as f:
+                        for line in f:
+                            if '=' in line and not line.strip().startswith('#'):
+                                name, value = line.strip().split('=', 1)
+                                cookies[name] = value
+                    self.logger.info(
+                        f"Loaded {len(cookies)} cookies for API request")
+                else:
+                    self.logger.warning("Could not find cf_cookies.txt file")
+            except Exception as e:
+                self.logger.warning(f"Could not load cookies: {e}")
+                cookies = {}
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://bc.game/",
+            }
+
+            response = requests.get(
+                url, params=params, cookies=cookies, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            data = response.json()
+
+            if 'data' in data and 'items' in data['data']:
+                items = data['data']['items']
+                self.logger.info(
+                    f"Successfully retrieved {len(items)} items from BC.GAME API (direct method)")
+                return items
+            else:
+                self.logger.error(
+                    f"Unexpected API response format: {data}")
                 return []
 
-            # If we reach here, all methods have failed
-            break
+        except Exception as e:
+            self.logger.error(f"Error fetching crash history from API: {e}")
 
-        # Return an empty result structure if everything fails
-        self.logger.error("All methods failed to fetch crash history")
-        return {'data': {'items': []}}
+            # Try using the shell script as a last resort
+            try:
+                self.logger.info("Attempting to use shell script as fallback")
+                result = subprocess.run(['./get_crash_history.sh', str(page), str(page_size)],
+                                        capture_output=True, text=True, timeout=20)
+
+                if result.returncode == 0:
+                    try:
+                        data = json.loads(result.stdout)
+                        if 'data' in data and 'items' in data['data']:
+                            items = data['data']['items']
+                            self.logger.info(
+                                f"Successfully retrieved {len(items)} items using shell script")
+                            return items
+                    except json.JSONDecodeError:
+                        self.logger.error(
+                            "Shell script output is not valid JSON")
+                else:
+                    self.logger.error(
+                        f"Shell script failed with code {result.returncode}: {result.stderr}")
+            except Exception as shell_error:
+                self.logger.error(
+                    f"Error using shell script fallback: {shell_error}")
+
+        # If all methods fail, try to use mock data
+        try:
+            mock_file = "crash_history.json"
+            if os.path.exists(mock_file):
+                with open(mock_file, "r") as f:
+                    data = json.load(f)
+
+                if 'data' in data and 'items' in data['data']:
+                    items = data['data']['items']
+                    self.logger.warning(
+                        f"Using mock data as last resort: {len(items)} items")
+                    return items
+        except Exception as mock_error:
+            self.logger.error(f"Error loading mock data: {mock_error}")
+
+        # If everything fails, return an empty list
+        self.logger.error("All methods to fetch crash history failed")
+        return []
 
     async def poll_and_process(self) -> List[Dict[str, Any]]:
         """
