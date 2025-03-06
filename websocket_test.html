@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>BC Game Crash Monitor - WebSocket Test</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				max-width: 1200px;
+				margin: 0 auto;
+				padding: 20px;
+				line-height: 1.6;
+			}
+
+			h1,
+			h2 {
+				color: #333;
+			}
+
+			#connection-status {
+				padding: 10px;
+				margin-bottom: 20px;
+				border-radius: 4px;
+				font-weight: bold;
+			}
+
+			.connected {
+				background-color: #d4edda;
+				color: #155724;
+				border: 1px solid #c3e6cb;
+			}
+
+			.disconnected {
+				background-color: #f8d7da;
+				color: #721c24;
+				border: 1px solid #f5c6cb;
+			}
+
+			.connecting {
+				background-color: #fff3cd;
+				color: #856404;
+				border: 1px solid #ffeeba;
+			}
+
+			button {
+				background-color: #4caf50;
+				color: white;
+				border: none;
+				padding: 10px 15px;
+				text-align: center;
+				text-decoration: none;
+				display: inline-block;
+				font-size: 16px;
+				margin: 4px 2px;
+				cursor: pointer;
+				border-radius: 4px;
+			}
+
+			button:hover {
+				background-color: #45a049;
+			}
+
+			button:disabled {
+				background-color: #cccccc;
+				cursor: not-allowed;
+			}
+
+			pre {
+				background-color: #f4f4f4;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				padding: 10px;
+				overflow: auto;
+				max-height: 300px;
+			}
+
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				margin-top: 20px;
+			}
+
+			table,
+			th,
+			td {
+				border: 1px solid #ddd;
+			}
+
+			th,
+			td {
+				padding: 12px;
+				text-align: left;
+			}
+
+			th {
+				background-color: #f2f2f2;
+			}
+
+			tr:nth-child(even) {
+				background-color: #f9f9f9;
+			}
+
+			.crash-point {
+				font-weight: bold;
+			}
+
+			.high {
+				color: #28a745;
+			}
+
+			.low {
+				color: #dc3545;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>BC Game Crash Monitor - WebSocket Test</h1>
+
+		<div
+			id="connection-status"
+			class="disconnected"
+		>
+			Disconnected
+		</div>
+
+		<div>
+			<button id="connect-btn">Connect</button>
+			<button
+				id="disconnect-btn"
+				disabled
+			>
+				Disconnect
+			</button>
+		</div>
+
+		<h2>Messages</h2>
+		<pre id="messages"></pre>
+
+		<h2>Games</h2>
+		<table id="games-table">
+			<thead>
+				<tr>
+					<th>Game ID</th>
+					<th>Crash Point</th>
+					<th>Calculated Point</th>
+					<th>Begin Time</th>
+				</tr>
+			</thead>
+			<tbody>
+				<!-- Games will be inserted here -->
+			</tbody>
+		</table>
+
+		<script>
+			let socket;
+			const connectBtn = document.getElementById('connect-btn');
+			const disconnectBtn = document.getElementById('disconnect-btn');
+			const connectionStatus =
+				document.getElementById('connection-status');
+			const messagesElem = document.getElementById('messages');
+			const gamesTableBody = document.querySelector('#games-table tbody');
+
+			// Format date string
+			function formatDate(dateStr) {
+				if (!dateStr) return 'N/A';
+
+				const date = new Date(dateStr);
+				return date.toLocaleString();
+			}
+
+			// Add message to the messages element
+			function addMessage(message) {
+				const date = new Date();
+				const dateStr = date.toLocaleTimeString();
+				messagesElem.textContent += `[${dateStr}] ${message}\n`;
+				messagesElem.scrollTop = messagesElem.scrollHeight;
+			}
+
+			// Add a game to the table
+			function addGame(game) {
+				// Check if game already exists
+				const existingRow = document.getElementById(
+					`game-${game.gameId}`
+				);
+				if (existingRow) {
+					return; // Skip if game already in table
+				}
+
+				const row = document.createElement('tr');
+				row.id = `game-${game.gameId}`;
+
+				const crashPointClass = game.crashPoint >= 2 ? 'high' : 'low';
+
+				row.innerHTML = `
+                <td>${game.gameId}</td>
+                <td class="crash-point ${crashPointClass}">${
+					game.crashPoint
+				}x</td>
+                <td>${game.calculatedPoint}x</td>
+                <td>${formatDate(game.beginTime)}</td>
+            `;
+
+				// Add to beginning of table
+				if (gamesTableBody.firstChild) {
+					gamesTableBody.insertBefore(row, gamesTableBody.firstChild);
+				} else {
+					gamesTableBody.appendChild(row);
+				}
+			}
+
+			// Connect to WebSocket
+			function connect() {
+				// Use window.location to determine the WebSocket URL
+				const protocol =
+					window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const host = window.location.hostname || 'localhost';
+				const port = 3000; // Default API port
+
+				const wsUrl = `${protocol}//${host}:${port}/ws`;
+
+				addMessage(`Connecting to ${wsUrl}...`);
+				connectionStatus.textContent = 'Connecting...';
+				connectionStatus.className = 'connecting';
+
+				socket = new WebSocket(wsUrl);
+
+				socket.onopen = function () {
+					addMessage('Connected to WebSocket server');
+					connectionStatus.textContent = 'Connected';
+					connectionStatus.className = 'connected';
+					connectBtn.disabled = true;
+					disconnectBtn.disabled = false;
+				};
+
+				socket.onmessage = function (event) {
+					const data = JSON.parse(event.data);
+					addMessage(`Received message: ${event.data}`);
+
+					// Handle different message types
+					if (data.type === 'new_game') {
+						addGame(data.data);
+					} else if (
+						data.type === 'games_update' &&
+						Array.isArray(data.data)
+					) {
+						// Add all games in the update
+						data.data.forEach((game) => addGame(game));
+					}
+				};
+
+				socket.onclose = function () {
+					addMessage('Disconnected from WebSocket server');
+					connectionStatus.textContent = 'Disconnected';
+					connectionStatus.className = 'disconnected';
+					connectBtn.disabled = false;
+					disconnectBtn.disabled = true;
+				};
+
+				socket.onerror = function (error) {
+					addMessage(`WebSocket error: ${error}`);
+					connectionStatus.textContent = 'Error';
+					connectionStatus.className = 'disconnected';
+				};
+			}
+
+			// Disconnect from WebSocket
+			function disconnect() {
+				if (socket) {
+					socket.close();
+					socket = null;
+				}
+			}
+
+			// Event listeners
+			connectBtn.addEventListener('click', connect);
+			disconnectBtn.addEventListener('click', disconnect);
+
+			// Connect automatically when the page loads
+			window.addEventListener('load', connect);
+		</script>
+	</body>
+</html>

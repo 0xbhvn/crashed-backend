@@ -1,5 +1,6 @@
 # Core dependencies
-aiohttp>=3.11.13
+aiohttp[speedups]>=3.11.13
+websockets>=10.4
 SQLAlchemy>=2.0.28
 alembic>=1.14.1
 psycopg2-binary>=2.9.9  # Required for PostgreSQL support in SQLAlchemy
