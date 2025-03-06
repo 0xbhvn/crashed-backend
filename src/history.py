@@ -15,6 +15,8 @@ from collections import deque
 import hashlib
 from typing import List, Dict, Any, Callable, Awaitable, Optional
 import pytz
+import os
+import sys
 
 # Import from config
 from . import config
@@ -133,6 +135,48 @@ class BCCrashMonitor:
         self.logger.debug("Fetching crash history from API...")
 
         try:
+            # Instead of using the utility function that uses shell script,
+            # use the direct import of use_cf_cookies like in the catchup process
+            use_cf_cookies_path = os.path.join(os.path.dirname(
+                os.path.dirname(__file__)), "use_cf_cookies.py")
+
+            if os.path.exists(use_cf_cookies_path):
+                # Add the project root to sys.path if it's not already there
+                project_root = os.path.dirname(os.path.dirname(__file__))
+                if project_root not in sys.path:
+                    sys.path.append(project_root)
+
+                # Try to import functions directly
+                try:
+                    # Using importlib to import the module dynamically
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location(
+                        "use_cf_cookies", use_cf_cookies_path)
+                    cf_cookies_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(cf_cookies_module)
+
+                    # Now use the imported function
+                    self.logger.info(
+                        f"Using direct import of use_cf_cookies for monitoring")
+                    data = cf_cookies_module.fetch_game_history(
+                        page=1, page_size=50)
+
+                    # Convert to expected format if needed
+                    if 'data' in data and 'list' in data['data']:
+                        converted_data = {
+                            'data': {
+                                'items': data['data']['list']
+                            }
+                        }
+                        return converted_data
+                    return data
+
+                except Exception as e:
+                    self.logger.warning(
+                        f"Error importing use_cf_cookies directly: {e}")
+                    # Fall back to original method
+
+            # Fall back to the utility function if direct import fails
             # Use the utility function to fetch game history
             game_list = await fetch_game_history(
                 base_url=self.api_base_url,
