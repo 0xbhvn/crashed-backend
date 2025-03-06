@@ -111,103 +111,98 @@ def fetch_game_history(page: int = 1, page_size: int = 20) -> Dict[str, Any]:
         'dnt': '1',
         'origin': 'https://bc.fun',
         'referer': 'https://bc.fun/game/crash',
-        'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"macOS"',
         'sec-fetch-dest': 'empty',
         'sec-fetch-mode': 'cors',
         'sec-fetch-site': 'same-origin',
-        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     }
 
-    data = {
-        "gameUrl": "crash",
-        "page": page,
-        "pageSize": page_size
+    # Set a deterministic clientSeed for consistency (doesn't affect results)
+    client_seed = f"python-client-{page}-{page_size}"
+
+    payload = {
+        'gameId': 'crashnormal',
+        'type': 'casino',
+        'timeRange': 0,
+        'clientSeed': client_seed,
+        'page': page,
+        'pageSize': page_size
     }
 
-    logger.info(
-        f"Fetching game history for page {page} with size {page_size}...")
+    # Log diagnostic information in production
+    is_production = os.environ.get(
+        'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
 
     try:
+        logger.info(
+            f"Making API request to {url} with page={page}, size={page_size}")
+
+        # Print verbose debugging in production
+        if is_production:
+            logger.info(f"Request headers: {headers}")
+            logger.info(f"Request cookies: {cookies}")
+            logger.info(f"Request payload: {payload}")
+
+            # Test if cookies are properly formatted
+            logger.info(f"Cookie count: {len(cookies)}")
+            for name, value in cookies.items():
+                # Only show first 10 chars of value for security
+                logger.info(f"Cookie {name}: {value[:10]}...")
+
+        # Make the API request
         response = requests.post(url, headers=headers,
-                                 cookies=cookies, json=data)
+                                 cookies=cookies, json=payload)
+
+        # Log the response details
+        if is_production:
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response headers: {dict(response.headers)}")
+
+            # Print a small part of the response for debugging
+            if response.status_code != 200:
+                logger.info(
+                    f"Response content (first 500 chars): {response.text[:500]}")
+
+                # If Cloudflare challenge detected in response text
+                if "Just a moment" in response.text or "challenge" in response.text.lower():
+                    logger.error(
+                        "Cloudflare challenge detected in response - cookies rejected")
+
+                # Try analyzing what might be wrong
+                if response.status_code == 403:
+                    logger.error("403 Forbidden - Possible reasons:")
+                    logger.error("1. Cookies are expired")
+                    logger.error("2. Cookies are from a different IP address")
+                    logger.error("3. Request is missing required headers")
+                    logger.error("4. Rate limiting is active")
+
+        # Check if the request was successful
         response.raise_for_status()
 
-        # Check if we got actual JSON data
-        if response.headers.get('content-type', '').startswith('application/json'):
-            result = response.json()
+        # Parse the response as JSON
+        data = response.json()
 
-            # Check if we got game data and standardize the format
-            if 'data' in result:
-                if 'list' in result['data']:
-                    games_count = len(result['data']['list'])
-                    logger.info(
-                        f"Successfully fetched {games_count} games (list format)")
+        # Check for error message in response
+        if 'msg' in data and data.get('success') is False:
+            logger.warning(f"API returned error: {data['msg']}")
+            return {'data': {'items': []}}
 
-                    # Create a standard format with 'items' key
-                    standardized_result = {
-                        'data': {
-                            'items': result['data']['list'],
-                            'page': result['data'].get('page', page),
-                            'pageSize': result['data'].get('pageSize', page_size),
-                            'total': result['data'].get('total', games_count),
-                            'totalPage': result['data'].get('totalPage', 1)
-                        }
-                    }
-                    return standardized_result
-
-                elif 'items' in result['data']:
-                    games_count = len(result['data']['items'])
-                    logger.info(
-                        f"Successfully fetched {games_count} games (items format)")
-                    return result
-                else:
-                    logger.warning(
-                        "Response does not contain expected game data structure")
-                    # Create an empty standardized result
-                    return {'data': {'items': []}}
-            else:
-                logger.warning("Response does not contain 'data' key")
-                return {'data': {'items': []}}
-        else:
-            # This might be a Cloudflare challenge
-            logger.warning(
-                "Response is not JSON, possibly a Cloudflare challenge")
-            logger.info("Refreshing cookies with Selenium...")
-
-            # Remove the old cookie file
-            if os.path.exists('cf_cookies.txt'):
-                os.remove('cf_cookies.txt')
-
-            # Run Selenium again to refresh cookies
-            subprocess.run(
-                ['./venv/bin/python', 'selenium_bc_game.py'], check=True)
-
-            # Try once more with the new cookies
-            cookies = get_cloudflare_cookies()
-            response = requests.post(
-                url, headers=headers, cookies=cookies, json=data)
-            response.raise_for_status()
-
-            result = response.json()
-            if 'data' in result and 'list' in result['data']:
-                games_count = len(result['data']['list'])
-                logger.info(
-                    f"Successfully fetched {games_count} games on second attempt (list format)")
-                return {'data': {'items': result['data']['list']}}
-            elif 'data' in result and 'items' in result['data']:
-                games_count = len(result['data']['items'])
-                logger.info(
-                    f"Successfully fetched {games_count} games on second attempt (items format)")
-                return result
-            else:
-                logger.warning(
-                    "Response still does not contain expected game data structure")
-                return {'data': {'items': []}}
-
-    except requests.exceptions.RequestException as e:
+        # Return the response data
+        return data
+    except requests.exceptions.HTTPError as e:
         logger.error(f"Error fetching game history: {e}")
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error: {e}")
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON response: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error in main execution: {e}")
         raise
 
 
