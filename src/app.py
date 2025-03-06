@@ -12,6 +12,7 @@ import argparse
 import logging
 from typing import Optional, Dict, Any
 from aiohttp import web
+import gc
 
 # Import from local modules
 from . import config
@@ -126,16 +127,21 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
             logger.warning("Continuing without database support")
 
     # Set up API server
-    from .api import setup_api_routes
+    from .api import setup_api
     api_app = web.Application()
 
+    # Store database in app
     if db:
-        # Set up API routes if database is available
-        setup_api_routes(api_app, db)
+        api_app['db'] = db
+
+    # Set up API and WebSocket routes
+    setup_api(api_app)
 
     # Start API server
     # Default to port 3000 if not specified
     api_port = int(os.environ.get('API_PORT', 3000))
+    logger.info(f"About to start API server on port {api_port}")
+
     runner = web.AppRunner(api_app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', api_port)
@@ -168,112 +174,167 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
             logger.error(f"Error during catchup process: {e}")
             logger.warning("Continuing with monitor despite catchup failure")
 
-    # Register a callback to print new games
+    # Register callback for new games
     async def log_game(game_data: Dict[str, Any]) -> None:
-        """Log new game data when received from the monitor"""
-        logger.info(
-            f"New crash game detected: Game #{game_data['gameId']} crashed at {game_data['crashPoint']}x " +
-            f"(calculated: {game_data.get('calculatedPoint', 'N/A')}x)"
-        )
+        """Log new games and broadcast via WebSocket."""
+        # Convert crashPoint to float for logging
+        crash_point = float(game_data.get('crashPoint', 0))
+        game_id = game_data.get('gameId', 'unknown')
 
+        logger.info(f"New game: {game_id} with crash point: {crash_point}")
+
+        try:
+            # Broadcast the new game to WebSocket clients if we have a WebSocket manager
+            if 'websocket_manager' in api_app:
+                await api_app['websocket_manager'].broadcast_new_game(game_data)
+        except Exception as e:
+            logger.error(f"Error broadcasting game via WebSocket: {e}")
+
+    # Register the callback with the monitor
     monitor.register_game_callback(log_game)
 
-    # Run the monitor
-    try:
-        logger.info("Starting BC Game Crash Monitor...")
-        await monitor.run()
-    finally:
-        # Close database connection if open
-        if db_engine:
-            db_engine.dispose()
-            logger.info("Database connection closed")
+    # Start the monitor (run forever)
+    logger.info("Starting BC Game Crash Monitor")
+    await monitor.run()
+
+    # Cleanup on exit
+    await runner.cleanup()
+    logger.info("BC Game Crash Monitor stopped")
 
 
 async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
     """
-    Run the catchup process to fetch historical game data
+    Run the catchup process to fetch historical game data.
 
     Args:
         pages: Number of pages to fetch
         batch_size: Batch size for concurrent requests
     """
-    logger = logging.getLogger("app")
+    logger = logging.getLogger("app.catchup")
     logger.info(
-        f"Starting catchup process with {pages} pages, batch size {batch_size}...")
+        f"Starting catchup with {pages} pages, batch size {batch_size}")
 
-    db_engine = None
+    # Import here to avoid circular imports
+    from .db.engine import Database
+
+    # Initialize database
     db = None
 
-    try:
-        if config.DATABASE_ENABLED:
-            # Initialize database
-            from sqlalchemy import create_engine
-            db_engine = create_engine(config.DATABASE_URL)
-            db = get_database(db_engine)
-            logger.info("Database connection established for catchup")
+    if config.DATABASE_ENABLED:
+        try:
+            db = Database(connection_string=config.DATABASE_URL)
+            logger.info("Database connection established")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            logger.warning("Continuing without database support")
 
-        # Fetch historical data
-        total_games = 0
+    # Set up batches
+    total_fetched = 0
+    total_skipped = 0
+    total_saved = 0
+    total_failed = 0
 
-        for page_num in range(1, pages + 1):
-            logger.info(f"Fetching page {page_num} of {pages}...")
-
-            # Fetch a batch of games
-            games_batch = await fetch_games_batch(
-                base_url=config.API_BASE_URL,
-                endpoint=config.API_HISTORY_ENDPOINT,
-                game_url=config.GAME_URL,
-                start_page=page_num,
-                end_page=page_num,
-                batch_size=batch_size
-            )
-
-            if not games_batch:
-                logger.warning(
-                    f"No games found on page {page_num}, stopping catchup")
-                break
-
-            # Store in database if enabled
-            if config.DATABASE_ENABLED and db:
-                with db.get_session() as session:
-                    for game in games_batch:
-                        # Check if game already exists
-                        existing_game = session.query(CrashGame).filter(
-                            CrashGame.gameId == game['gameId']
-                        ).first()
-
-                        if not existing_game:
-                            # Calculate crash point
-                            hash_value = game.get('hashValue')
-                            if hash_value:
-                                calculated_point = BCCrashMonitor.calculate_crash_point(
-                                    seed=hash_value, salt=config.BC_GAME_SALT
-                                )
-                                game['calculatedPoint'] = calculated_point
-
-                            # Create new game object
-                            new_game = CrashGame(**game)
-                            session.add(new_game)
-
-                    # Commit all changes
-                    session.commit()
-
-            total_games += len(games_batch)
-            logger.info(
-                f"Processed {len(games_batch)} games from page {page_num}")
+    # Fetch data in batches
+    for page in range(1, pages + 1, batch_size):
+        # Calculate end page for this batch
+        end_page = min(page + batch_size - 1, pages)
+        pages_in_batch = end_page - page + 1
 
         logger.info(
-            f"Catchup completed: processed {total_games} games from {pages} pages")
+            f"Fetching batch {(page-1)//batch_size + 1}/{(pages+batch_size-1)//batch_size}: "
+            f"pages {page}-{end_page}"
+        )
 
-    except Exception as e:
-        logger.error(f"Error during catchup process: {e}")
-        raise
+        # Create a list of pages to fetch
+        page_nums = list(range(page, end_page + 1))
 
-    finally:
-        # Close database connection if open
-        if db_engine:
-            db_engine.dispose()
-            logger.info("Database connection closed")
+        # Fetch pages in parallel
+        games = await fetch_games_batch(page_nums)
+
+        if not games:
+            logger.warning(
+                f"No games found in batch (pages {page}-{end_page})")
+            continue
+
+        logger.info(f"Fetched {len(games)} games from pages {page}-{end_page}")
+        total_fetched += len(games)
+
+        # Skip saving if database is not enabled
+        if not config.DATABASE_ENABLED or db is None:
+            logger.info(
+                f"Database disabled, not saving games (skipped {len(games)} games)")
+            total_skipped += len(games)
+            continue
+
+        # Save games to database
+        saved_count = 0
+        failed_count = 0
+
+        for game in games:
+            try:
+                db.save_crash_game(game)
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"Failed to save game {game.get('gameId')}: {e}")
+                failed_count += 1
+
+        logger.info(
+            f"Saved {saved_count}/{len(games)} games from pages {page}-{end_page}")
+
+        if failed_count > 0:
+            logger.warning(
+                f"Failed to save {failed_count}/{len(games)} games from pages {page}-{end_page}")
+
+        total_saved += saved_count
+        total_failed += failed_count
+
+    logger.info(
+        f"Catchup completed: Fetched {total_fetched}, "
+        f"Saved {total_saved}, Skipped {total_skipped}, Failed {total_failed}"
+    )
+
+    # Broadcast games via WebSocket if database is connected
+    if config.DATABASE_ENABLED and db is not None:
+        try:
+            # Get the API app to access the websocket manager
+            from aiohttp.web import Application
+            import gc
+            for obj in gc.get_objects():
+                if isinstance(obj, Application) and 'websocket_manager' in obj:
+                    api_app = obj
+                    break
+            else:
+                logger.warning(
+                    "Could not find API app, not broadcasting games via WebSocket")
+                return
+
+            # Get the most recent games
+            with db.get_session() as session:
+                recent_games = session.query(CrashGame).order_by(
+                    CrashGame.beginTime.desc()
+                ).limit(10).all()
+
+                # Convert to dictionaries
+                games_data = []
+                for game in recent_games:
+                    game_dict = {
+                        'gameId': game.gameId,
+                        'hashValue': game.hashValue,
+                        'crashPoint': float(game.crashPoint),
+                        'calculatedPoint': float(game.calculatedPoint),
+                        'crashedFloor': int(game.crashedFloor) if game.crashedFloor else None,
+                        'endTime': game.endTime.isoformat() if game.endTime else None,
+                        'prepareTime': game.prepareTime.isoformat() if game.prepareTime else None,
+                        'beginTime': game.beginTime.isoformat() if game.beginTime else None
+                    }
+                    games_data.append(game_dict)
+
+                # Broadcast the games
+                await api_app['websocket_manager'].broadcast_multiple_games(games_data)
+                logger.info(
+                    f"Broadcasted {len(games_data)} recent games via WebSocket")
+        except Exception as e:
+            logger.error(f"Error broadcasting games via WebSocket: {e}")
 
 
 async def run_migrations(migrate_command, **kwargs):
@@ -313,18 +374,20 @@ async def health_check(request):
 
 
 async def start_health_check_server():
-    """Start a simple HTTP server for health checks."""
+    """Start a simple health check server."""
+    logger = logging.getLogger("app")
     app = web.Application()
     app.router.add_get('/', health_check)
 
+    # Default to port 8080 if not specified
+    health_port = int(os.environ.get('HEALTH_PORT', 8080))
+    logger.info(f"Starting health check server on port {health_port}")
+
     runner = web.AppRunner(app)
     await runner.setup()
-    # Railway will route to port 8080 by default
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    site = web.TCPSite(runner, '0.0.0.0', health_port)
     await site.start()
-
-    logger = logging.getLogger("app")
-    logger.info("Health check server started on port 8080")
+    logger.info(f"Health check server started on port {health_port}")
 
 
 async def main() -> None:
