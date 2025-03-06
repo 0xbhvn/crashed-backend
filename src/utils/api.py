@@ -18,15 +18,13 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 
 from .. import config
-from .mock_data import generate_mock_history, save_mock_history
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Track consecutive failures to know when to switch to mock data
+# Track consecutive failures
 consecutive_failures = 0
 MAX_CONSECUTIVE_FAILURES = 3
-USE_MOCK_DATA = os.environ.get('USE_MOCK_DATA', 'false').lower() == 'true'
 
 
 class APIError(Exception):
@@ -50,19 +48,11 @@ async def fetch_game_history(page: int = 1, page_size: int = None, base_url: str
     Raises:
         APIError: If there was an error fetching the history
     """
-    global consecutive_failures, USE_MOCK_DATA
+    global consecutive_failures
 
     # Use default page size from config if not specified
     if page_size is None:
-        page_size = int(os.environ.get('PAGE_SIZE', '50'))
-
-    # If we're in mock mode or have too many failures, use mock data
-    if USE_MOCK_DATA:
-        logger.info(
-            f"Using mock data for page {page} with size {page_size} (mock mode enabled)")
-        mock_data = generate_mock_history(page, page_size)
-        # Convert to expected format
-        return {'data': {'items': mock_data['data']['list']}}
+        page_size = int(os.environ.get('PAGE_SIZE', '20'))
 
     logger.info(
         f"Fetching game history from page {page} with size {page_size} using shell script")
@@ -121,16 +111,6 @@ async def fetch_game_history(page: int = 1, page_size: int = None, base_url: str
                         "Received Cloudflare challenge instead of JSON. API access may be blocked.")
                     consecutive_failures += 1
 
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        logger.warning(
-                            f"Switching to mock data after {consecutive_failures} consecutive failures")
-                        USE_MOCK_DATA = True
-                        # Generate and save mock data for this page
-                        mock_data = save_mock_history(
-                            page, page_size, output_path=json_file_path)
-                        # Return in expected format
-                        return {'data': {'items': mock_data['data']['list']}}
-
                     # Return an empty result with expected structure to prevent crashing
                     return {'data': {'items': []}}
 
@@ -180,18 +160,6 @@ async def fetch_game_history(page: int = 1, page_size: int = None, base_url: str
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON file: {str(e)}")
             consecutive_failures += 1
-
-            # If we consistently get errors, fall back to mock data
-            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES or os.environ.get('ENVIRONMENT', 'production').lower() == 'development':
-                logger.warning(
-                    f"Switching to mock data after {consecutive_failures} consecutive failures")
-                USE_MOCK_DATA = True
-                # Generate and save mock data
-                mock_data = save_mock_history(
-                    page, page_size, output_path=json_file_path)
-                # Return in expected format
-                return {'data': {'items': mock_data['data']['list']}}
-
             raise APIError(f"Failed to parse JSON file: {str(e)}")
         except FileNotFoundError:
             logger.error(f"JSON file not found at {json_file_path}")
@@ -326,7 +294,7 @@ async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
         game_url: Game URL (default from config)
         end_page: End page number (overrides num_pages if provided)
         batch_size: Batch size for concurrent requests (default from config)
-        page_size: Number of items per page (default is 50, max is 1000)
+        page_size: Number of items per page (default is 20, max is 100)
 
     Returns:
         List of processed game data dictionaries
@@ -336,7 +304,7 @@ async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
     # Default to a smaller batch to be safe
     batch_size = batch_size or min(config.CONCURRENCY_LIMIT, 3)
     # Use default page size if not provided
-    page_size = page_size or int(os.environ.get('PAGE_SIZE', '50'))
+    page_size = page_size or int(os.environ.get('PAGE_SIZE', '20'))
 
     # Calculate the number of pages to fetch
     if end_page is not None:
@@ -411,32 +379,3 @@ async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
 
     logger.info(f"Fetched {len(all_games)} games from {num_pages} pages")
     return all_games
-
-
-def reset_mock_data_flag():
-    """
-    Reset the mock data flag to attempt to use the real API again.
-    This can be called periodically to check if the API is accessible again.
-    """
-    global consecutive_failures, USE_MOCK_DATA
-    if USE_MOCK_DATA and os.environ.get('USE_MOCK_DATA', 'false').lower() != 'true':
-        logger.info("Resetting mock data flag to attempt using real API")
-        USE_MOCK_DATA = False
-        consecutive_failures = 0
-
-# Reset every hour by default
-
-
-async def periodic_mock_reset(interval_seconds=3600):
-    """
-    Periodically reset the mock data flag to attempt using the real API again.
-
-    Args:
-        interval_seconds: How often to try resetting (default: 1 hour)
-    """
-    while True:
-        await asyncio.sleep(interval_seconds)
-        if USE_MOCK_DATA and os.environ.get('USE_MOCK_DATA', 'false').lower() != 'true':
-            logger.info(
-                f"Periodic reset of mock data flag after {interval_seconds}s")
-            reset_mock_data_flag()

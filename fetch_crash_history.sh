@@ -85,17 +85,13 @@ fi
 
 # Check if the output begins with HTML (Cloudflare challenge) instead of JSON
 if grep -q "<!DOCTYPE html>" "$OUTPUT_FILE"; then
-  echo "Warning: Received Cloudflare challenge instead of JSON data" >&2
-  # Create a valid JSON response with empty data so the application doesn't crash
-  echo '{"data":{"list":[]}}' > "$OUTPUT_FILE"
+  handle_error "Received Cloudflare challenge instead of JSON data. API access is blocked."
 fi
 
 # Check file size
 FILE_SIZE=$(stat -f%z "$OUTPUT_FILE" 2>/dev/null || stat -c%s "$OUTPUT_FILE" 2>/dev/null)
 if [ "$FILE_SIZE" -lt 10 ]; then
-  echo "Warning: Response file is too small ($FILE_SIZE bytes)" >&2
-  # Create a valid JSON response with empty data
-  echo '{"data":{"list":[]}}' > "$OUTPUT_FILE"
+  handle_error "Response file is too small ($FILE_SIZE bytes). API may be unavailable."
 fi
 
 echo "Fetch completed successfully"
