@@ -384,70 +384,75 @@ async def run_catchup(pages: int = 20, batch_size: int = 20, page_size: int = No
                 batch_skipped += 1
                 continue
 
-            # Process each game
-            games_processed = 0
-            for game in game_items:
-                # Continue with existing processing logic
-                try:
-                    # Extract game details
-                    game_id = str(game.get("gameId", ""))
+            # Process batch of games instead of one by one
+            try:
+                if db and config.DATABASE_ENABLED:
+                    # Prepare game data for bulk insert
+                    prepared_games = []
 
-                    # Extract game details if in JSON string format
-                    game_detail = {}
-                    if "gameDetail" in game and isinstance(game["gameDetail"], str):
-                        try:
-                            game_detail = json.loads(game["gameDetail"])
-                        except json.JSONDecodeError:
-                            logger.warning(
-                                f"Failed to parse gameDetail for game {game_id}")
+                    for game in game_items:
+                        # Extract game details
+                        game_id = str(game.get("gameId", ""))
 
-                    # Get hash and crash point
-                    hash_value = game.get(
-                        "hash", "") or game_detail.get("hash", "")
+                        # Extract game details if in JSON string format
+                        game_detail = {}
+                        if "gameDetail" in game and isinstance(game["gameDetail"], str):
+                            try:
+                                game_detail = json.loads(game["gameDetail"])
+                            except json.JSONDecodeError:
+                                logger.warning(
+                                    f"Failed to parse gameDetail for game {game_id}")
+                                continue
 
-                    # Get crash point (rate)
-                    crash_point = 1.0  # Default value
-                    if "rate" in game_detail:
-                        try:
-                            crash_point = float(game_detail["rate"])
-                        except (ValueError, TypeError):
-                            pass
+                        # Get hash and crash point
+                        hash_value = game.get(
+                            "hash", "") or game_detail.get("hash", "")
 
-                    # Calculate expected crash point
-                    calculated_point = 0.0
-                    if hash_value and config.BC_GAME_SALT:
-                        try:
-                            from .history import BCCrashMonitor
-                            calculated_point = BCCrashMonitor.calculate_crash_point(
-                                hash_value, config.BC_GAME_SALT)
-                        except Exception as e:
-                            logger.error(
-                                f"Error calculating crash point: {e}")
+                        # Get crash point (rate)
+                        crash_point = 1.0  # Default value
+                        if "rate" in game_detail:
+                            try:
+                                crash_point = float(game_detail["rate"])
+                            except (ValueError, TypeError):
+                                pass
 
-                    # Store in database
-                    if db and config.DATABASE_ENABLED:
-                        try:
-                            from .db.operations import store_crash_game
-                            game_obj = await store_crash_game(
-                                game_id=game_id,
-                                hash_value=hash_value,
-                                crash_point=crash_point,
-                                calculated_point=calculated_point,
-                                game_detail=game_detail
-                            )
-                            if game_obj:
-                                batch_saved += 1
-                                games_processed += 1
-                        except Exception as e:
-                            logger.error(
-                                f"Error storing game {game_id}: {e}")
-                            batch_failed += 1
-                    else:
-                        games_processed += 1
+                        # Calculate expected crash point
+                        calculated_point = 0.0
+                        if hash_value and config.BC_GAME_SALT:
+                            try:
+                                from .history import BCCrashMonitor
+                                calculated_point = BCCrashMonitor.calculate_crash_point(
+                                    hash_value, config.BC_GAME_SALT)
+                            except Exception as e:
+                                logger.error(
+                                    f"Error calculating crash point: {e}")
 
-                except Exception as e:
-                    logger.error(f"Error processing game: {e}")
-                    batch_failed += 1
+                        # Add to prepared games list
+                        prepared_games.append({
+                            'game_id': game_id,
+                            'hash': hash_value,
+                            'crash_point': crash_point,
+                            'calculated_point': calculated_point,
+                            'game_detail': game_detail
+                        })
+
+                    # Use bulk database operations
+                    if prepared_games:
+                        from .db.operations import bulk_store_crash_games
+                        stored_ids = await bulk_store_crash_games(prepared_games)
+                        batch_saved += len(stored_ids)
+                        games_processed = len(prepared_games)
+                        logger.info(
+                            f"Bulk stored {len(stored_ids)} games from page {current_page}")
+
+                # Even if not storing in database, count as processed
+                else:
+                    games_processed = len(game_items)
+
+            except Exception as e:
+                logger.error(
+                    f"Error processing games from page {current_page}: {e}")
+                batch_failed += 1
 
             logger.info(
                 f"Processed {games_processed} games from page {current_page}")
