@@ -11,6 +11,7 @@ import argparse
 import subprocess
 import requests
 import time
+import sys
 from typing import Dict, Any, List
 
 # Configure logging
@@ -28,10 +29,46 @@ def get_cloudflare_cookies() -> Dict[str, str]:
 
     if not os.path.exists(cookie_file):
         logger.warning(
-            f"Cookie file {cookie_file} not found. Running Selenium script to get cookies...")
-        # Run the Selenium script to get cookies
-        subprocess.run(
-            ['./venv/bin/python', 'selenium_bc_game.py'], check=True)
+            f"Cookie file {cookie_file} not found.")
+
+        # Check if we're in a production container environment
+        in_container = os.environ.get(
+            'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
+
+        if in_container:
+            logger.warning(
+                "Running in container environment - cannot use Selenium browser.")
+            logger.warning(
+                "You need to manually add Cloudflare cookies to cf_cookies.txt")
+            logger.warning("Format: cf_clearance=value\\ncf_bm=value")
+
+            # Try to create an empty cookie file so we don't keep trying
+            try:
+                with open(cookie_file, 'w') as f:
+                    f.write("# Add Cloudflare cookies here\n")
+                    f.write("# Format: cf_clearance=value\n")
+                    f.write("# cf_bm=value\n")
+            except Exception as e:
+                logger.error(f"Error creating empty cookie file: {e}")
+        else:
+            # Determine the Python executable path
+            if os.path.exists('./venv/bin/python'):
+                python_path = './venv/bin/python'
+            elif os.path.exists('/opt/venv/bin/python'):
+                python_path = '/opt/venv/bin/python'
+            else:
+                python_path = sys.executable  # Use current Python interpreter
+
+            logger.info(f"Running Selenium script with Python: {python_path}")
+
+            try:
+                # Run the Selenium script to get cookies
+                subprocess.run(
+                    [python_path, 'selenium_bc_game.py'], check=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to run Selenium script: {e}")
+            except FileNotFoundError as e:
+                logger.error(f"Selenium script not found: {e}")
     else:
         # Check cookie file age - warn if older than 1 hour
         cookie_age = time.time() - os.path.getmtime(cookie_file)
@@ -46,13 +83,17 @@ def get_cloudflare_cookies() -> Dict[str, str]:
     if os.path.exists(cookie_file):
         with open(cookie_file, 'r') as f:
             for line in f:
+                # Skip comment lines
+                if line.strip().startswith('#'):
+                    continue
+
                 if '=' in line:
                     name, value = line.strip().split('=', 1)
                     cookies[name] = value
         logger.info(f"Loaded {len(cookies)} cookies from {cookie_file}")
     else:
         logger.error(
-            f"Cookie file {cookie_file} still not found after running Selenium")
+            f"Cookie file {cookie_file} still not found after attempting to create it")
 
     return cookies
 

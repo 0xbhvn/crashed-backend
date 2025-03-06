@@ -139,6 +139,10 @@ class BCCrashMonitor:
         # Track if we've already attempted to refresh cookies in this call
         cookie_refresh_attempted = False
 
+        # Check if we're in a container environment
+        in_container = os.environ.get(
+            'CONTAINER', '') == 'true' or os.environ.get('DOCKER', '') == 'true'
+
         while True:  # Add a retry loop
             try:
                 # Try to import and use the direct method with cookies first
@@ -182,9 +186,18 @@ class BCCrashMonitor:
                             f"Error importing use_cf_cookies directly: {e}")
 
                         # Check if it's a 403 Forbidden error (Cloudflare blocking)
-                        if "403" in str(e) and "Forbidden" in str(e) and not cookie_refresh_attempted:
+                        if ("403" in str(e) or "Forbidden" in str(e)) and not cookie_refresh_attempted:
                             self.logger.warning(
                                 "API access blocked. Attempting to refresh Cloudflare cookies...")
+
+                            # Only try to refresh with Selenium if we're not in a container
+                            if in_container:
+                                self.logger.warning(
+                                    "Cannot refresh cookies in container environment - need manual intervention")
+                                self.logger.warning(
+                                    "Please add valid Cloudflare cookies to cf_cookies.txt file")
+                                break  # Exit the retry loop
+
                             # Run Selenium script to get fresh cookies
                             try:
                                 selenium_script_path = os.path.join(os.path.dirname(
@@ -195,9 +208,17 @@ class BCCrashMonitor:
                                     self.logger.info(
                                         "Launching Selenium to refresh cookies...")
 
+                                    # Determine Python executable
+                                    if os.path.exists('./venv/bin/python'):
+                                        python_path = './venv/bin/python'
+                                    elif os.path.exists('/opt/venv/bin/python'):
+                                        python_path = '/opt/venv/bin/python'
+                                    else:
+                                        python_path = sys.executable
+
                                     # Run the Selenium script non-blocking with automatic input
                                     process = await asyncio.create_subprocess_exec(
-                                        sys.executable,
+                                        python_path,
                                         selenium_script_path,
                                         stdin=asyncio.subprocess.PIPE,
                                         stdout=asyncio.subprocess.PIPE,
@@ -235,6 +256,7 @@ class BCCrashMonitor:
 
                 # Fall back to the utility function if direct import fails
                 # Use the utility function to fetch game history
+                self.logger.info("Falling back to shell script method")
                 game_list = await fetch_game_history(
                     base_url=self.api_base_url,
                     endpoint=self.api_history_endpoint,
@@ -251,6 +273,13 @@ class BCCrashMonitor:
             except Exception as e:
                 self.logger.error(f"Error fetching crash history: {e}")
                 return []
+
+            # If we reach here, all methods have failed
+            break
+
+        # Return an empty result structure if everything fails
+        self.logger.error("All methods failed to fetch crash history")
+        return {'data': {'items': []}}
 
     async def poll_and_process(self) -> List[Dict[str, Any]]:
         """
