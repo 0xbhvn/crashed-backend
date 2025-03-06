@@ -73,6 +73,7 @@ The application can be configured using environment variables:
 - `GAME_URL`: Game URL path (default: '/game/crash')
 - `PAGE_SIZE`: Number of games per page in API requests (default: 50)
 - `API_PORT`: Port for the REST API server (default: 3000)
+- `HEALTH_PORT`: Port for the health check server (default: 8080)
 
 ### Calculation Settings
 

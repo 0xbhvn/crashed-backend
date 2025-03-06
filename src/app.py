@@ -137,15 +137,14 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     # Set up API and WebSocket routes
     setup_api(api_app)
 
-    # Start API server
-    # Default to port 3000 if not specified
-    api_port = int(os.environ.get('API_PORT', 3000))
-    logger.info(f"About to start API server on port {api_port}")
+    # Get API port from config or environment, fallback to 3000 for container compatibility
+    api_port = int(config.get_env_var('API_PORT', '3000'))
 
-    runner = web.AppRunner(api_app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', api_port)
-    await site.start()
+    # Create API server
+    api_runner = web.AppRunner(api_app)
+    await api_runner.setup()
+    api_site = web.TCPSite(api_runner, '0.0.0.0', api_port)
+    await api_site.start()
     logger.info(f"API server started on port {api_port}")
 
     # Skip the rest if we're only running the API server
@@ -198,7 +197,7 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     await monitor.run()
 
     # Cleanup on exit
-    await runner.cleanup()
+    await api_runner.cleanup()
     logger.info("BC Game Crash Monitor stopped")
 
 
@@ -245,11 +244,8 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
             f"pages {page}-{end_page}"
         )
 
-        # Create a list of pages to fetch
-        page_nums = list(range(page, end_page + 1))
-
         # Fetch pages in parallel
-        games = await fetch_games_batch(page_nums)
+        games = await fetch_games_batch(start_page=page, end_page=end_page)
 
         if not games:
             logger.warning(
@@ -379,14 +375,14 @@ async def start_health_check_server():
     app = web.Application()
     app.router.add_get('/', health_check)
 
-    # Default to port 8080 if not specified
-    health_port = int(os.environ.get('HEALTH_PORT', 8080))
-    logger.info(f"Starting health check server on port {health_port}")
+    # Get health check port from config or environment, fallback to 8080 for container compatibility
+    health_port = int(config.get_env_var('HEALTH_PORT', '8080'))
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', health_port)
-    await site.start()
+    # Create health check server
+    health_runner = web.AppRunner(app)
+    await health_runner.setup()
+    health_site = web.TCPSite(health_runner, '0.0.0.0', health_port)
+    await health_site.start()
     logger.info(f"Health check server started on port {health_port}")
 
 
