@@ -92,63 +92,112 @@ async def verify_hash(request: web.Request) -> web.Response:
     Verify a BC Game hash and calculate crash points for the given hash and previous games.
 
     Query parameters:
-        hash: The game hash to verify
-        count: Number of games to verify (including the provided hash)
-        salt: Salt to use for verification (defaults to app config)
+        hash: The BC Game hash to verify
+        count: Number of games to verify (default: 10)
+        salt: Custom salt to use for verification (optional)
+
+    Returns:
+        JSON response with verification results
     """
     try:
-        # Get query parameters
-        hash_value = request.query.get('hash')
-        count_str = request.query.get('count', '10')
-        salt = request.query.get('salt', config.BC_GAME_SALT)
+        # Get parameters from request
+        params = request.query
+        game_hash = params.get('hash')
+        count = params.get('count', '10')
+        # Default salt if not provided
+        salt = params.get('salt', 'bc_game_salt')
 
         # Validate hash parameter
-        if not hash_value:
-            return error_response("Missing required parameter: hash", 400)
+        if not game_hash:
+            logger.warning("Missing hash parameter in request")
+            return web.json_response({
+                'status': 'error',
+                'error': 'Missing hash parameter'
+            }, status=400, headers={
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type'
+            })
 
         # Validate count parameter
         try:
-            count = int(count_str)
-            if count < 1:
-                count = 1
-            elif count > 100:
-                count = 100  # Limit to 100 games maximum
+            count = int(count)
+            if count < 1 or count > 100:
+                count = 10  # Default to 10 if out of range
+                logger.warning(
+                    f"Count parameter out of range, using default: {count}")
         except ValueError:
-            return error_response(f"Invalid count parameter: {count_str}", 400)
+            count = 10  # Default to 10 if not a valid integer
+            logger.warning(f"Invalid count parameter, using default: {count}")
 
-        # Prepare results list
+        logger.info(
+            f"Processing hash verification request: hash={game_hash}, count={count}, salt={salt}")
+
+        # Process the hash and calculate crash points
         results = []
+        current_hash = game_hash
 
-        # Process the given hash and its previous hashes
-        current_hash = hash_value
+        # Add 0x prefix if not present
+        if not current_hash.startswith("0x"):
+            current_hash = "0x" + current_hash
+
+        # Calculate crash points for the specified number of games
         for i in range(count):
-            # Calculate crash point for current hash
-            crash_point = calculate_crash_point(current_hash, salt)
+            try:
+                # Calculate crash point for current hash
+                crash_point = calculate_crash_point(current_hash, salt)
 
-            # Add to results
-            results.append({
-                'game_number': i,
-                'hash': current_hash,
-                'crash_point': crash_point
-            })
+                # Add to results
+                results.append({
+                    'game_number': i + 1,
+                    'hash': current_hash,
+                    'crash_point': crash_point
+                })
 
-            # Calculate previous hash (for next iteration)
-            if i < count - 1:
+                # Calculate hash for previous game
                 current_hash = calculate_previous_hash(current_hash)
+            except Exception as e:
+                logger.error(f"Error processing game {i+1}: {e}")
+                # Skip this game and continue with the next
+                current_hash = calculate_previous_hash(current_hash)
+                continue
 
-        # Prepare response
+        # Return the results
         response_data = {
             'status': 'success',
-            'results': results,
             'salt': salt,
-            'count': len(results)
+            'count': len(results),
+            'results': results
         }
 
-        return json_response(response_data)
+        return web.json_response(response_data, headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        })
 
     except Exception as e:
-        logger.error(f"Error in verify_hash: {e}")
-        return error_response(str(e), 500)
+        logger.error(f"Error in hash verification: {e}")
+        return web.json_response({
+            'status': 'error',
+            'error': str(e)
+        }, status=500, headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        })
+
+# Add OPTIONS method handler for CORS preflight requests
+
+
+@routes.options('/api/hash-verify')
+async def options_hash_verify(request: web.Request) -> web.Response:
+    """Handle OPTIONS requests for the hash-verify endpoint to support CORS"""
+    return web.Response(headers={
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    })
 
 
 def setup_hash_verify_routes(app: web.Application) -> None:

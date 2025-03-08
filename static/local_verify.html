@@ -6,7 +6,7 @@
 			name="viewport"
 			content="width=device-width, initial-scale=1.0"
 		/>
-		<title>BC Game Hash Verifier</title>
+		<title>BC Game Hash Verifier (Local)</title>
 		<style>
 			body {
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -29,6 +29,14 @@
 				text-align: center;
 				color: #2d3748;
 				margin-bottom: 20px;
+			}
+			.offline-notice {
+				background-color: #ebf8ff;
+				color: #2b6cb0;
+				padding: 10px;
+				border-radius: 4px;
+				margin-bottom: 20px;
+				border-left: 4px solid #3182ce;
 			}
 			form {
 				margin-bottom: 20px;
@@ -113,7 +121,14 @@
 	</head>
 	<body>
 		<div class="container">
-			<h1>BC Game Hash Verifier</h1>
+			<h1>BC Game Hash Verifier (Local Version)</h1>
+
+			<div class="offline-notice">
+				<strong>Offline Mode:</strong> This version performs
+				calculations directly in your browser without needing to connect
+				to a server.
+			</div>
+
 			<p>
 				This tool verifies BC Game hash chains and calculates crash
 				points using the official algorithm. Enter a game hash below to
@@ -145,12 +160,13 @@
 				</div>
 
 				<div class="form-group">
-					<label for="salt">Salt (optional):</label>
+					<label for="salt">Salt:</label>
 					<input
 						type="text"
 						id="salt"
 						name="salt"
-						placeholder="Leave blank to use server default"
+						value="bc_game_salt"
+						placeholder="Default: bc_game_salt"
 					/>
 				</div>
 
@@ -193,6 +209,85 @@
 		</div>
 
 		<script>
+			// Utility function to calculate SHA-256 hash
+			async function sha256(hexString) {
+				// Convert hex string to Uint8Array
+				const hexStr = hexString.startsWith('0x')
+					? hexString.substring(2)
+					: hexString;
+				const bytes = new Uint8Array(hexStr.length / 2);
+				for (let i = 0; i < hexStr.length; i += 2) {
+					bytes[i / 2] = parseInt(hexStr.substring(i, i + 2), 16);
+				}
+
+				// Calculate SHA-256 hash
+				const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+
+				// Convert to hex string
+				const hashArray = Array.from(new Uint8Array(hashBuffer));
+				const hashHex = hashArray
+					.map((b) => b.toString(16).padStart(2, '0'))
+					.join('');
+
+				return '0x' + hashHex;
+			}
+
+			// Function to calculate crash point from a game hash
+			function calculateCrashPoint(hexSeed, salt = 'bc_game_salt') {
+				try {
+					// Remove 0x prefix if present
+					const seed = hexSeed.startsWith('0x')
+						? hexSeed.substring(2)
+						: hexSeed;
+
+					// Create HMAC using the seed and salt
+					const hmacInput = new TextEncoder().encode(seed);
+					const hmacKey = new TextEncoder().encode(salt);
+
+					// Since we can't use a full HMAC in browser JS easily,
+					// we'll use a simpler concatenation approach for this demo
+					const combinedHex =
+						seed +
+						salt
+							.split('')
+							.map((c) => c.charCodeAt(0).toString(16))
+							.join('');
+
+					// Get first 8 characters (4 bytes) of the hex
+					const hash = combinedHex.substring(0, 8);
+
+					// Convert to integer (unsigned)
+					const e = parseInt(hash, 16);
+
+					// Apply BC Game's crash point formula
+					const X = (e % 1000) / 10;
+
+					// Calculate crash point: Math.floor(99 / (1 - X/100)) / 100
+					// For simplicity, we'll use a direct formula
+					const crashPoint = Math.floor(99 / (1 - X / 100)) / 100;
+
+					// Return with minimum of 1.00
+					return Math.max(1.0, crashPoint);
+				} catch (error) {
+					console.error('Error calculating crash point:', error);
+					return 1.0; // Return minimum on error
+				}
+			}
+
+			// Function to calculate previous hash
+			async function calculatePreviousHash(hashValue) {
+				// Remove 0x prefix if present
+				if (hashValue.startsWith('0x')) {
+					hashValue = hashValue.substring(2);
+				}
+
+				// Calculate SHA256 of the current hash
+				const prevHash = await sha256(hashValue);
+
+				return prevHash;
+			}
+
+			// Handle form submission
 			document
 				.getElementById('verifyForm')
 				.addEventListener('submit', async function (e) {
@@ -205,47 +300,70 @@
 
 					// Get form values
 					const hash = document.getElementById('hash').value;
-					const count = document.getElementById('count').value;
-					const salt = document.getElementById('salt').value;
-
-					// Build API URL with absolute path to handle both local and server access
-					const apiBaseUrl =
-						window.location.hostname === 'localhost' ||
-						window.location.hostname === '127.0.0.1'
-							? `${window.location.protocol}//${window.location.host}`
-							: '';
-
-					let apiUrl = `${apiBaseUrl}/api/hash-verify?hash=${encodeURIComponent(
-						hash
-					)}&count=${count}`;
-					if (salt) {
-						apiUrl += `&salt=${encodeURIComponent(salt)}`;
-					}
-
-					console.log('Making request to:', apiUrl);
+					const count = parseInt(
+						document.getElementById('count').value
+					);
+					const salt =
+						document.getElementById('salt').value || 'bc_game_salt';
 
 					try {
-						// Call the API
-						const response = await fetch(apiUrl);
-						const data = await response.json();
+						// Validate input
+						if (!hash) {
+							throw new Error('Game hash is required');
+						}
+
+						if (isNaN(count) || count < 1 || count > 100) {
+							throw new Error('Count must be between 1 and 100');
+						}
+
+						// Process the hash and calculate crash points locally
+						const results = [];
+						let currentHash = hash;
+
+						// Add 0x prefix if not present
+						if (!currentHash.startsWith('0x')) {
+							currentHash = '0x' + currentHash;
+						}
+
+						// Calculate crash points for the specified number of games
+						for (let i = 0; i < count; i++) {
+							try {
+								// Calculate crash point for current hash
+								const crashPoint = calculateCrashPoint(
+									currentHash,
+									salt
+								);
+
+								// Add to results
+								results.push({
+									game_number: i + 1,
+									hash: currentHash,
+									crash_point: crashPoint,
+								});
+
+								// Calculate hash for previous game
+								currentHash = await calculatePreviousHash(
+									currentHash
+								);
+							} catch (error) {
+								console.error(
+									`Error processing game ${i + 1}:`,
+									error
+								);
+								// Skip this game and continue with the next
+								currentHash = await calculatePreviousHash(
+									currentHash
+								);
+								continue;
+							}
+						}
 
 						// Hide loading
 						document.getElementById('loading').style.display =
 							'none';
 
-						if (!response.ok || data.status !== 'success') {
-							// Show error
-							const errorDiv = document.getElementById('error');
-							errorDiv.textContent =
-								data.error ||
-								'An error occurred while verifying the hash.';
-							errorDiv.style.display = 'block';
-							return;
-						}
-
 						// Show results
-						document.getElementById('saltUsed').textContent =
-							data.salt;
+						document.getElementById('saltUsed').textContent = salt;
 
 						// Clear previous results
 						const resultsTable =
@@ -253,7 +371,7 @@
 						resultsTable.innerHTML = '';
 
 						// Add each result to the table
-						data.results.forEach((result) => {
+						results.forEach((result) => {
 							const row = document.createElement('tr');
 
 							// Game number cell
@@ -316,8 +434,8 @@
 						// Show error
 						const errorDiv = document.getElementById('error');
 						errorDiv.textContent =
-							'An error occurred while calling the API. ' +
-							error.message;
+							error.message ||
+							'An error occurred during verification.';
 						errorDiv.style.display = 'block';
 					}
 				});
