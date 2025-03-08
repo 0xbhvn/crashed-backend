@@ -9,6 +9,7 @@ import logging
 from aiohttp import web
 from .routes import setup_api_routes
 from .websocket import setup_websocket_routes, WebSocketManager
+from .hash_verify import setup_hash_verify_routes
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,9 @@ def setup_api(app: web.Application) -> None:
     """
     # Set up API routes
     setup_api_routes(app)
+
+    # Set up hash verification routes
+    setup_hash_verify_routes(app)
 
     # Set up WebSocket routes
     setup_websocket_routes(app)

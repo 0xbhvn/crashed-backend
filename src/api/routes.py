@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 routes = web.RouteTableDef()
 
 
+@routes.get('/')
+async def root_redirect(request: web.Request) -> web.Response:
+    """Redirect from root path to the verification page."""
+    return web.HTTPFound('/static/verify.html')
+
+
 @routes.get('/api/games')
 async def get_games(request: web.Request) -> web.Response:
     """
@@ -164,4 +170,8 @@ def setup_api_routes(app: web.Application) -> None:
         app: The aiohttp application.
     """
     app.add_routes(routes)
+
+    # Add static file serving
+    app.router.add_static('/static/', path='static', name='static')
+
     logger.info("API routes configured")
