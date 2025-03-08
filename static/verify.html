@@ -150,7 +150,8 @@
 						type="text"
 						id="salt"
 						name="salt"
-						placeholder="Leave blank to use server default"
+						value="0000000000000000000301e2801a9a9598bfb114e574a91a887f2132f33047e6"
+						placeholder="Default BC Game salt"
 					/>
 				</div>
 
@@ -176,11 +177,18 @@
 			>
 				<h2>Verification Results</h2>
 				<p>Salt used: <span id="saltUsed"></span></p>
+				<p
+					id="noteText"
+					style="
+						background-color: #fffde7;
+						padding: 10px;
+						border-left: 4px solid #ffd600;
+					"
+				></p>
 
 				<table>
 					<thead>
 						<tr>
-							<th>Game #</th>
 							<th>Hash</th>
 							<th>Crash Point</th>
 						</tr>
@@ -206,7 +214,9 @@
 					// Get form values
 					const hash = document.getElementById('hash').value;
 					const count = document.getElementById('count').value;
-					const salt = document.getElementById('salt').value;
+					const salt =
+						document.getElementById('salt').value ||
+						'0000000000000000000301e2801a9a9598bfb114e574a91a887f2132f33047e6';
 
 					// Build API URL with absolute path to handle both local and server access
 					const apiBaseUrl =
@@ -217,7 +227,7 @@
 
 					let apiUrl = `${apiBaseUrl}/api/hash-verify?hash=${encodeURIComponent(
 						hash
-					)}&count=${count}`;
+					)}`;
 					if (salt) {
 						apiUrl += `&salt=${encodeURIComponent(salt)}`;
 					}
@@ -246,64 +256,57 @@
 						// Show results
 						document.getElementById('saltUsed').textContent =
 							data.salt;
+						document.getElementById('noteText').textContent =
+							data.note || '';
 
 						// Clear previous results
 						const resultsTable =
 							document.getElementById('resultsTable');
 						resultsTable.innerHTML = '';
 
-						// Add each result to the table
-						data.results.forEach((result) => {
-							const row = document.createElement('tr');
+						// Add result to the table
+						const row = document.createElement('tr');
 
-							// Game number cell
-							const gameNumberCell = document.createElement('td');
-							gameNumberCell.textContent = result.game_number;
-							row.appendChild(gameNumberCell);
+						// Hash cell
+						const hashCell = document.createElement('td');
+						// Truncate hash for display if too long
+						const displayHash =
+							data.hash.length > 20
+								? data.hash.substring(0, 10) +
+								  '...' +
+								  data.hash.substring(data.hash.length - 10)
+								: data.hash;
 
-							// Hash cell
-							const hashCell = document.createElement('td');
-							// Truncate hash for display if too long
-							const displayHash =
-								result.hash.length > 20
-									? result.hash.substring(0, 10) +
-									  '...' +
-									  result.hash.substring(
-											result.hash.length - 10
-									  )
-									: result.hash;
+						// Create a title attribute with the full hash
+						const hashSpan = document.createElement('span');
+						hashSpan.textContent = displayHash;
+						hashSpan.title = data.hash;
+						hashSpan.style.cursor = 'pointer';
+						hashCell.appendChild(hashSpan);
+						row.appendChild(hashCell);
 
-							// Create a title attribute with the full hash
-							const hashSpan = document.createElement('span');
-							hashSpan.textContent = displayHash;
-							hashSpan.title = result.hash;
-							hashSpan.style.cursor = 'pointer';
-							hashCell.appendChild(hashSpan);
-							row.appendChild(hashCell);
+						// Crash point cell with color coding
+						const crashPointCell = document.createElement('td');
+						const crashPoint = data.crash_point;
+						const crashSpan = document.createElement('span');
+						crashSpan.textContent = crashPoint.toFixed(2) + 'x';
+						crashSpan.classList.add('crash-value');
 
-							// Crash point cell with color coding
-							const crashPointCell = document.createElement('td');
-							const crashPoint = result.crash_point;
-							const crashSpan = document.createElement('span');
-							crashSpan.textContent = crashPoint.toFixed(2) + 'x';
-							crashSpan.classList.add('crash-value');
+						// Add color classes
+						if (crashPoint < 2) {
+							crashSpan.classList.add('low');
+						} else if (crashPoint < 5) {
+							crashSpan.classList.add('medium');
+						} else if (crashPoint < 10) {
+							crashSpan.classList.add('high');
+						} else {
+							crashSpan.classList.add('very-high');
+						}
 
-							// Add color classes
-							if (crashPoint < 2) {
-								crashSpan.classList.add('low');
-							} else if (crashPoint < 5) {
-								crashSpan.classList.add('medium');
-							} else if (crashPoint < 10) {
-								crashSpan.classList.add('high');
-							} else {
-								crashSpan.classList.add('very-high');
-							}
+						crashPointCell.appendChild(crashSpan);
+						row.appendChild(crashPointCell);
 
-							crashPointCell.appendChild(crashSpan);
-							row.appendChild(crashPointCell);
-
-							resultsTable.appendChild(row);
-						});
+						resultsTable.appendChild(row);
 
 						// Show result div
 						document.getElementById('result').style.display =
