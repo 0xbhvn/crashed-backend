@@ -268,7 +268,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
 
         for game in games:
             try:
-                db.save_crash_game(game)
+                db.add_crash_game(game)
                 saved_count += 1
             except Exception as e:
                 logger.error(f"Failed to save game {game.get('gameId')}: {e}")
