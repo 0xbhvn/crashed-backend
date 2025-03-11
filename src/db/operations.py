@@ -241,3 +241,52 @@ async def get_game_by_id(game_id: str) -> Optional[CrashGame]:
     except Exception as e:
         logger.error(f"Error getting game by ID: {str(e)}")
         return None
+
+
+async def check_game_exists(db_engine, game_id: str) -> bool:
+    """
+    Check if a game exists in the database.
+
+    Args:
+        db_engine: The database engine to use
+        game_id: The ID of the game to check
+
+    Returns:
+        bool: True if the game exists, False otherwise
+    """
+    try:
+        db = get_database()
+        game = db.get_crash_game_by_id(game_id)
+        return game is not None
+    except Exception as e:
+        logger.error(f"Error checking if game exists: {str(e)}")
+        return False
+
+
+async def process_game_data_for_storage(db_engine, game_data: Dict[str, Any]) -> Optional[CrashGame]:
+    """
+    Process game data and store it in the database.
+
+    Args:
+        db_engine: The database engine to use
+        game_data: Dictionary containing game data
+
+    Returns:
+        Optional[CrashGame]: The stored crash game, or None if an error occurred
+    """
+    try:
+        game_id = game_data.get('gameId')
+        hash_value = game_data.get('hashValue')
+        crash_point = game_data.get('crashPoint')
+        calculated_point = game_data.get('calculatedPoint', crash_point)
+
+        return await store_crash_game(
+            game_id=game_id,
+            hash_value=hash_value,
+            crash_point=crash_point,
+            calculated_point=calculated_point,
+            game_detail=game_data
+        )
+    except Exception as e:
+        logger.error(f"Error processing game data for storage: {str(e)}")
+        return None

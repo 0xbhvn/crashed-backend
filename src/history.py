@@ -381,8 +381,8 @@ class BCCrashMonitor:
                         }
 
                         # Store the game in the database
-                        from src.db.operations import store_crash_game
-                        await store_crash_game(self.db_engine, db_game)
+                        from src.db.operations import process_game_data_for_storage
+                        await process_game_data_for_storage(self.db_engine, db_game)
                     except Exception as e:
                         self.logger.error(
                             f"Error storing game in database: {e}")
@@ -537,7 +537,12 @@ class BCCrashMonitor:
         """
         # Check in memory cache first
         for game in self.latest_hashes:
-            if game.get('id') == game_id:
+            # Handle case where game could be a string (just the hash)
+            if isinstance(game, str):
+                continue
+
+            # Handle case where game is a dictionary
+            if isinstance(game, dict) and game.get('id') == game_id:
                 return False
 
         # If we have a DB, check there too
