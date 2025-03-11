@@ -312,116 +312,74 @@ class BCCrashMonitor:
         """
         try:
             # Fetch crash history from the API
-            history_response = await self.fetch_crash_history()
-
-            if not history_response or 'data' not in history_response or 'items' not in history_response['data']:
-                self.logger.warning(
-                    f"No data received from API or invalid format")
-                return []
-
-            history_data = history_response['data']['items']
+            history_data = await self.fetch_crash_history()
 
             if not history_data:
-                self.logger.warning(f"No games in API response")
+                self.logger.warning("No data received from API")
                 return []
 
             # Process only the new entries
             new_results = []
             for game_data in history_data:
                 try:
-                    game_id = game_data.get('gameId')
+                    game_id = game_data.get('id')
 
+                    # Skip games that don't have an ID
                     if not game_id:
                         self.logger.warning(
-                            f"Game data missing gameId: {game_data}")
+                            f"Skipping game without ID: {game_data}")
                         continue
 
-                    # Skip if we've already processed this game
-                    if game_id == self.last_processed_game_id:
-                        self.logger.debug(
-                            f"Found last processed game {game_id}, stopping")
-                        break
+                    # Check if we already have this game in our history
+                    if self.last_processed_game_id and game_id == self.last_processed_game_id:
+                        continue
 
-                    # Process the game data using the utility function
-                    processed_data = process_game_data(game_data)
+                    # Add to the history cache
+                    if hasattr(self, 'history'):
+                        self.history.insert(0, game_data)
+                        # Get max history size from config or use a default value
+                        max_size = getattr(self, 'max_history_size', 1000)
+                        if hasattr(self, 'config') and hasattr(self.config, 'MAX_HISTORY_SIZE'):
+                            max_size = self.config.MAX_HISTORY_SIZE
+                        if len(self.history) > max_size:
+                            self.history = self.history[:max_size]
 
-                    # Calculate crash point using the hash as the seed
-                    hash_value = processed_data.get('hashValue')
-                    if hash_value:
-                        calculated_crash = self.calculate_crash_point(
-                            seed=hash_value, salt=self.salt)
-                        processed_data['calculatedPoint'] = calculated_crash
+                    # Store to database if enabled
+                    if self.database_enabled and self.db_engine:
+                        try:
+                            # Format the game data for storing
+                            db_game = {
+                                'gameId': game_data.get('id'),
+                                'hashValue': game_data.get('hash'),
+                                'crashPoint': game_data.get('crash_point'),
+                                'createdAt': game_data.get('created_at')
+                            }
+
+                            # Store in the database using operations module
+                            from src.db.operations import store_crash_game
+                            await store_crash_game(self.db_engine, db_game)
+                        except Exception as db_error:
+                            self.logger.error(
+                                f"Error storing game {game_id} to database: {db_error}")
 
                     # Add to new results
-                    new_results.append(processed_data)
-                    self.logger.debug(f"Added new game {game_id} to results")
+                    new_results.append(game_data)
+
+                    # Update last processed game ID
+                    self.last_processed_game_id = game_id
+
+                    # Notify callbacks about the new game
+                    await self.notify_game_callbacks(game_data)
                 except Exception as e:
                     self.logger.error(
-                        f"Error processing individual game data: {e}")
+                        f"Error processing game {game_data}: {e}")
+                    continue
 
-            # Process results in reverse order (oldest to newest)
-            if new_results:
-                if len(new_results) == 1:
-                    # For a single result, include game_id and crash point
-                    game = new_results[0]
-                    self.logger.info(
-                        f"Found 1 new crash result: Game #{game['gameId']} with crash point {game['crashPoint']}x")
-                else:
-                    # For multiple results, just show the count
-                    self.logger.info(
-                        f"Found {len(new_results)} new crash results")
-
-                # First run, just record the latest game ID
-                if self.last_processed_game_id is None and new_results:
-                    self.last_processed_game_id = new_results[0]['gameId']
-                    self.logger.info(
-                        f"First run, setting last processed game ID to {self.last_processed_game_id}")
-                    return []
-
-                # Process in reverse order (oldest to newest)
-                for result in reversed(new_results):
-                    # Store in database if enabled
-                    if self.database_enabled and self.db:
-                        try:
-                            # Store game in database using the db module
-                            with self.db.get_session() as session:
-                                # Check if game already exists
-                                existing_game = session.query(CrashGame).filter(
-                                    CrashGame.gameId == result['gameId']
-                                ).first()
-
-                                if not existing_game:
-                                    # Create new game object
-                                    new_game = CrashGame(**result)
-                                    session.add(new_game)
-                                    session.commit()
-                        except Exception as e:
-                            self.logger.error(
-                                f"Error storing game in database: {e}")
-
-                    # Update last processed ID
-                    self.last_processed_game_id = result['gameId']
-
-                    # Notify callbacks
-                    await self.notify_game_callbacks(result)
-
-                    # Log for single game results only if verbose logging is enabled
-                    if self.verbose_logging and len(new_results) == 1:
-                        self.logger.info(
-                            f"Found 1 new crash result: Game #{result['gameId']} with crash point {result['crashPoint']}x")
-
-                # Log the overview only if verbose logging is enabled
-                if self.verbose_logging and len(new_results) > 1:
-                    self.logger.info(
-                        f"Found {len(new_results)} new crash results")
-
-                return new_results
-            else:
-                self.logger.debug("No new crash results found")
-                return []
-
+            return new_results
         except Exception as e:
-            self.logger.error(f"Error in poll_and_process: {e}")
+            self.logger.error(f"Error polling and processing games: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
     async def run(self):
@@ -489,6 +447,136 @@ class BCCrashMonitor:
         except Exception as e:
             self.logger.error(f"Error loading history file: {e}")
             return None
+
+    async def get_latest_games(self, max_games=50):
+        """
+        Get the latest games from BC.GAME API.
+
+        Args:
+            max_games: Maximum number of games to retrieve
+
+        Returns:
+            List of new game data dictionaries
+        """
+        try:
+            # Fetch crash history from the API
+            history_response = await self.fetch_crash_history()
+
+            self.logger.info(
+                f"Fetched history response: {type(history_response)}")
+
+            # The fetch_crash_history now returns a list of game dictionaries directly
+            if not history_response:
+                self.logger.warning("No data received from API")
+                return []
+
+            history_data = history_response
+
+            if not history_data:
+                self.logger.warning("No games in API response")
+                return []
+
+            # Process only the new entries
+            new_results = []
+            for game_data in history_data:
+                try:
+                    game_id = game_data.get('id')
+
+                    # Skip games that don't have an ID
+                    if not game_id:
+                        self.logger.warning(
+                            f"Skipping game without ID: {game_data}")
+                        continue
+
+                    # Check if we already have this game in our history
+                    if not self.is_new_game(game_id):
+                        continue
+
+                    # Add to new results
+                    new_results.append(game_data)
+
+                    # Stop once we have enough games
+                    if len(new_results) >= max_games:
+                        break
+                except Exception as e:
+                    self.logger.error(
+                        f"Error processing game {game_data}: {e}")
+                    continue
+
+            return new_results
+        except Exception as e:
+            self.logger.error(f"Error getting latest games: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+
+    def is_new_game(self, game_id):
+        """
+        Check if a game is new (not already in our history).
+
+        Args:
+            game_id: The ID of the game to check
+
+        Returns:
+            bool: True if the game is new, False otherwise
+        """
+        # Check in memory cache first
+        for game in self.latest_hashes:
+            if game.get('id') == game_id:
+                return False
+
+        # If we have a DB, check there too
+        if self.database_enabled and self.db:
+            try:
+                from src.db.operations import check_game_exists
+                if check_game_exists(self.db, game_id):
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error checking if game exists in DB: {e}")
+
+        return True
+
+    def add_game_to_history(self, game_data):
+        """
+        Add a game to the in-memory history cache.
+
+        Args:
+            game_data: The game data to add
+        """
+        # Add to the front of the list (most recent first)
+        self.latest_hashes.insert(0, game_data)
+
+        # Trim history if it gets too large
+        if len(self.latest_hashes) > config.MAX_HISTORY_SIZE:
+            self.latest_hashes = self.latest_hashes[:config.MAX_HISTORY_SIZE]
+
+    async def store_game_to_db(self, game_data):
+        """
+        Store a game in the database.
+
+        Args:
+            game_data: The game data to store
+        """
+        if not self.database_enabled or not self.db:
+            return
+
+        try:
+            from src.db.operations import store_crash_game
+
+            # Format the game data for storing
+            db_game = {
+                'gameId': game_data.get('id'),
+                'hashValue': game_data.get('hash'),
+                'crashPoint': game_data.get('crash_point'),
+                'createdAt': game_data.get('created_at')
+            }
+
+            # Store in the database
+            await store_crash_game(self.db, db_game)
+            self.logger.debug(f"Stored game {db_game['gameId']} in database")
+        except Exception as e:
+            self.logger.error(f"Error storing game in database: {e}")
+            raise
 
 
 async def main():
