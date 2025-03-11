@@ -198,9 +198,9 @@ class BCCrashMonitor:
                     data = await response.json()
 
                     # Process the response data to extract crash games
-                    if 'data' in data and 'rows' in data['data']:
+                    if 'data' in data and 'list' in data['data']:
                         items = self.extract_crash_games_from_response(
-                            data['data']['rows'])
+                            data['data']['list'])
                         self.logger.info(
                             f"Successfully retrieved {len(items)} items from BC.GAME API")
                         return items
@@ -215,26 +215,53 @@ class BCCrashMonitor:
             # Fall back to mock data if any exception occurs during API request
             return self.get_mock_crash_data(page, page_size)
 
-    def extract_crash_games_from_response(self, rows):
+    def extract_crash_games_from_response(self, game_list):
         """
         Extract crash game data from the new API response format.
 
         The new endpoint returns bet history which needs to be transformed to match
         our expected crash game format.
+
+        Args:
+            game_list: List of game objects from the BC Game API response
+
+        Returns:
+            List of formatted crash game data
         """
         try:
             games = []
 
-            for row in rows:
-                # Verify this is a crash game
-                if 'gameUrl' in row and row['gameUrl'] == 'crash':
+            for game in game_list:
+                try:
+                    game_id = game.get('gameId', '')
+                    # Game details are stored as a JSON string, need to parse it
+                    game_detail_str = game.get('gameDetail', '{}')
+                    game_detail = json.loads(game_detail_str)
+
+                    # Extract fields from game_detail
+                    crash_point = float(game_detail.get('rate', 1.0))
+                    hash_value = game_detail.get('hash', '')
+                    end_time = game_detail.get('endTime', 0)
+
+                    # Convert timestamp to ISO format
+                    if end_time:
+                        created_at = datetime.fromtimestamp(
+                            end_time / 1000).isoformat()
+                    else:
+                        created_at = datetime.now().isoformat()
+
                     game_data = {
-                        'id': row.get('gameId', ''),
-                        'created_at': row.get('createdAt', ''),
-                        'hash': row.get('gameHash', ''),
-                        'crash_point': row.get('crashPoint', 1.0)
+                        'id': game_id,
+                        'created_at': created_at,
+                        'hash': hash_value,
+                        'crash_point': crash_point
                     }
                     games.append(game_data)
+
+                except Exception as e:
+                    self.logger.error(
+                        f"Error processing game {game.get('gameId', 'unknown')}: {e}")
+                    continue
 
             return games
         except Exception as e:

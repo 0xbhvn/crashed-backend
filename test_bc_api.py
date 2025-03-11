@@ -57,25 +57,46 @@ async def test_bc_game_api(page=1, page_size=10):
 
                 data = await response.json()
                 logger.info(
-                    f"Response received: {json.dumps(data, indent=2)[:500]}...")
+                    f"Response received with format: {list(data.keys())}")
 
                 # Process the response data to extract crash games
-                if 'data' in data and 'rows' in data['data']:
-                    rows = data['data']['rows']
+                if 'data' in data and 'list' in data['data']:
+                    game_list = data['data']['list']
                     logger.info(
-                        f"Successfully retrieved {len(rows)} rows from BC.GAME API")
+                        f"Successfully retrieved {len(game_list)} games from BC.GAME API")
 
                     # Extract crash games
                     games = []
-                    for row in rows:
-                        if 'gameUrl' in row and row['gameUrl'] == 'crash':
+                    for game in game_list:
+                        try:
+                            game_id = game.get('gameId', '')
+                            # Game details are stored as a JSON string, need to parse it
+                            game_detail_str = game.get('gameDetail', '{}')
+                            game_detail = json.loads(game_detail_str)
+
+                            # Extract fields from game_detail
+                            crash_point = float(game_detail.get('rate', 1.0))
+                            hash_value = game_detail.get('hash', '')
+                            end_time = game_detail.get('endTime', 0)
+
+                            # Convert timestamp to ISO format
+                            if end_time:
+                                created_at = datetime.fromtimestamp(
+                                    end_time / 1000).isoformat()
+                            else:
+                                created_at = datetime.now().isoformat()
+
                             game_data = {
-                                'id': row.get('gameId', ''),
-                                'created_at': row.get('createdAt', ''),
-                                'hash': row.get('gameHash', ''),
-                                'crash_point': row.get('crashPoint', 1.0)
+                                'id': game_id,
+                                'created_at': created_at,
+                                'hash': hash_value,
+                                'crash_point': crash_point
                             }
                             games.append(game_data)
+
+                        except Exception as e:
+                            logger.error(
+                                f"Error processing game {game.get('gameId', 'unknown')}: {e}")
 
                     logger.info(
                         f"Extracted {len(games)} crash games from response")
@@ -97,6 +118,8 @@ async def test_bc_game_api(page=1, page_size=10):
 
     except Exception as e:
         logger.error(f"Error testing BC Game API: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 
