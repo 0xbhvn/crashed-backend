@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Helper script to use Cloudflare cookies with BC Game API requests.
-This demonstrates how to use the cookies captured by Selenium to make API requests.
+DEPRECATED: This script is no longer used for accessing BC Game API.
+
+The application now uses a direct POST request to the API without requiring cookies or Cloudflare bypass.
+See src/history.py for the new implementation.
+
+This file is kept for reference only.
 """
 
 import os
@@ -285,22 +289,16 @@ def fetch_crash_data(endpoint_key, params=None):
 
 
 def get_crash_history(page=1, page_size=50):
-    """Get crash game history using the best available method."""
-    params = {
-        'page': page,
-        'size': page_size
-    }
+    """
+    DEPRECATED: This function is no longer used.
 
-    success, data = fetch_crash_data('history', params)
-
-    if success and data and 'data' in data and 'items' in data['data']:
-        items = data['data']['items']
-        logger.info(
-            f"Successfully retrieved {len(items)} crash game history items")
-        return items
-    else:
-        logger.error("Failed to retrieve crash game history")
-        return []
+    The application now uses a direct API call in src/history.py.
+    This function is kept for backward compatibility but will just log a warning.
+    """
+    logger.warning(
+        "This method is deprecated. The application now uses a direct API call in src/history.py"
+    )
+    return []
 
 
 def get_recent_history():
@@ -426,4 +424,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    print("DEPRECATED: This script is no longer used for accessing BC Game API.")
+    print("The application now uses a direct POST request to the API without requiring cookies.")
+    print("See src/history.py for the new implementation.")
