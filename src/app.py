@@ -172,6 +172,9 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         verbose_logging=False
     )
 
+    # Store monitor in app for API access
+    api_app['monitor'] = monitor
+
     # Run catchup process if enabled
     if not skip_catchup and config.CATCHUP_ENABLED:
         try:

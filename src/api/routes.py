@@ -162,6 +162,61 @@ async def get_game_by_id(request: web.Request) -> web.Response:
         return error_response(str(e), 500)
 
 
+@routes.get('/api/history')
+async def get_history(request: web.Request) -> web.Response:
+    """
+    Get the latest crash games from the in-memory history cache.
+
+    Query parameters:
+        limit: Maximum number of games to return (default: all available games)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get query parameters
+        limit_str = request.query.get('limit')
+        limit = int(limit_str) if limit_str else None
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get monitor from app
+        monitor = request.app.get('monitor')
+
+        if not monitor or not hasattr(monitor, 'history'):
+            return error_response('History not available', 503)
+
+        # Get games from history
+        games = monitor.history
+
+        # Apply limit if specified
+        if limit and limit > 0:
+            games = games[:limit]
+
+        # Convert to dictionaries with timezone conversion if needed
+        games_data = []
+        for game in games:
+            game_dict = {
+                'gameId': game.get('gameId') or game.get('id'),
+                'hashValue': game.get('hashValue') or game.get('hash'),
+                'crashPoint': float(game.get('crashPoint')),
+                'createdAt': convert_datetime_to_timezone(game.get('createdAt'), timezone_name) if game.get('createdAt') else None
+            }
+            games_data.append(game_dict)
+
+        response_data = {
+            'status': 'success',
+            'count': len(games_data),
+            'data': games_data
+        }
+
+        return json_response(response_data)
+    except Exception as e:
+        logger.error(f"Error in get_history: {e}")
+        return error_response(str(e), 500)
+
+
 def setup_api_routes(app: web.Application) -> None:
     """
     Set up API routes for the application.
