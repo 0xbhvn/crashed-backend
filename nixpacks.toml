@@ -6,4 +6,4 @@ cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip in
 
 [start]
 # Run migrations and then start the application
-cmd = "sh -c 'python -m src migrate upgrade --revision head && python -m src monitor'" 
+cmd = "sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup'" 
