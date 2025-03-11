@@ -252,6 +252,7 @@ class BCCrashMonitor:
 
                     game_data = {
                         'id': game_id,
+                        'gameId': game_id,
                         'created_at': created_at,
                         'hash': hash_value,
                         'crash_point': crash_point
@@ -290,8 +291,11 @@ class BCCrashMonitor:
 
                 # Create the mock game entry
                 game_time = (base_time - timedelta(minutes=idx*2)).isoformat()
+                game_id = f"{7000000 + idx}"
+
                 mock_data.append({
-                    'id': f"{7000000 + idx}",
+                    'id': game_id,              # Include id for new code
+                    'gameId': game_id,          # Include gameId for backward compatibility
                     'created_at': game_time,
                     'hash': game_hash,
                     'crash_point': crash_point
@@ -322,7 +326,12 @@ class BCCrashMonitor:
             new_results = []
             for game_data in history_data:
                 try:
+                    # Check if we have id or gameId
                     game_id = game_data.get('id')
+                    if not game_id and 'gameId' in game_data:
+                        game_id = game_data.get('gameId')
+                        # Update id for consistency
+                        game_data['id'] = game_id
 
                     # Skip games that don't have an ID
                     if not game_id:
@@ -331,7 +340,7 @@ class BCCrashMonitor:
                         continue
 
                     # Check if we already have this game in our history
-                    if self.last_processed_game_id and game_id == self.last_processed_game_id:
+                    if self.last_processed_game_id and str(game_id) == str(self.last_processed_game_id):
                         continue
 
                     # Add to the history cache
@@ -349,7 +358,7 @@ class BCCrashMonitor:
                         try:
                             # Format the game data for storing
                             db_game = {
-                                'gameId': game_data.get('id'),
+                                'gameId': str(game_id),
                                 'hashValue': game_data.get('hash'),
                                 'crashPoint': game_data.get('crash_point'),
                                 'createdAt': game_data.get('created_at')
