@@ -243,7 +243,7 @@ async def get_game_by_id(game_id: str) -> Optional[CrashGame]:
         return None
 
 
-async def check_game_exists(db_engine, game_id: str) -> bool:
+def check_game_exists(db_engine, game_id: str) -> bool:
     """
     Check if a game exists in the database.
 
