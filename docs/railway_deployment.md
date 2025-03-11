@@ -42,7 +42,17 @@ Set additional environment variables in the Railway dashboard:
    - `BC_GAME_SALT` (if needed)
    - Any other environment variables from your local `.env` file
 
-### 5. Run Database Migrations
+### 5. Application Configuration
+
+The application is configured with a Procfile that runs database migrations and starts the monitor with the `--skip-catchup` flag:
+
+```
+web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup'
+```
+
+This prevents the catchup process from running during initialization, which helps avoid unnecessary API calls and database operations on startup.
+
+### 6. Run Database Migrations
 
 After deployment, you'll need to run database migrations. You can do this using the Railway CLI or by connecting to the application's shell in the Railway dashboard:
 
