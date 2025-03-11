@@ -120,6 +120,37 @@
 				calculate the crash point for that game and previous games.
 			</p>
 
+			<div
+				style="
+					display: flex;
+					justify-content: center;
+					margin-bottom: 20px;
+				"
+			>
+				<button
+					id="viewHistoryBtn"
+					style="width: auto; padding: 8px 16px; margin-right: 10px"
+				>
+					View Recent Games
+				</button>
+				<a
+					href="/api/history"
+					target="_blank"
+					style="text-decoration: none"
+				>
+					<button
+						type="button"
+						style="
+							width: auto;
+							padding: 8px 16px;
+							background-color: #38a169;
+						"
+					>
+						API JSON
+					</button>
+				</a>
+			</div>
+
 			<form id="verifyForm">
 				<div class="form-group">
 					<label for="hash">Game Hash:</label>
@@ -321,6 +352,99 @@
 						errorDiv.textContent =
 							'An error occurred while calling the API. ' +
 							error.message;
+						errorDiv.style.display = 'block';
+					}
+				});
+
+			// Add event listener for the View Recent Games button
+			document
+				.getElementById('viewHistoryBtn')
+				.addEventListener('click', async function () {
+					// Show loading, hide previous results and errors
+					document.getElementById('loading').style.display = 'block';
+					document.getElementById('result').style.display = 'none';
+					document.getElementById('error').style.display = 'none';
+
+					try {
+						// Build API URL with absolute path
+						const apiBaseUrl =
+							window.location.hostname === 'localhost' ||
+							window.location.hostname === '127.0.0.1'
+								? `${window.location.protocol}//${window.location.host}`
+								: '';
+
+						const apiUrl = `${apiBaseUrl}/api/history`;
+
+						// Call the API
+						const response = await fetch(apiUrl);
+						const data = await response.json();
+
+						// Hide loading
+						document.getElementById('loading').style.display =
+							'none';
+
+						if (!response.ok || data.status !== 'success') {
+							// Show error
+							const errorDiv = document.getElementById('error');
+							errorDiv.textContent =
+								data.error || 'Failed to fetch recent games';
+							errorDiv.style.display = 'block';
+							return;
+						}
+
+						// Display results
+						document.getElementById('result').style.display =
+							'block';
+						document.getElementById('saltUsed').textContent =
+							'N/A (Recent Games)';
+						document.getElementById(
+							'noteText'
+						).textContent = `Showing ${data.count} most recent games from the monitor's history cache.`;
+
+						// Clear previous results
+						const resultsTable =
+							document.getElementById('resultsTable');
+						resultsTable.innerHTML = '';
+
+						// Add each game to the table
+						data.data.forEach((game) => {
+							const row = document.createElement('tr');
+
+							// Create hash cell
+							const hashCell = document.createElement('td');
+							hashCell.textContent = game.hashValue;
+							row.appendChild(hashCell);
+
+							// Create crash point cell
+							const crashPointCell = document.createElement('td');
+							const crashPoint = parseFloat(game.crashPoint);
+
+							// Add class based on crash point value
+							let crashClass = '';
+							if (crashPoint < 1.5) crashClass = 'low';
+							else if (crashPoint < 3) crashClass = 'medium';
+							else if (crashPoint < 10) crashClass = 'high';
+							else crashClass = 'very-high';
+
+							crashPointCell.innerHTML = `<span class="crash-value ${crashClass}">${crashPoint.toFixed(
+								2
+							)}x</span>`;
+							row.appendChild(crashPointCell);
+
+							// Add row to table
+							resultsTable.appendChild(row);
+						});
+					} catch (error) {
+						console.error('Error fetching history:', error);
+
+						// Hide loading
+						document.getElementById('loading').style.display =
+							'none';
+
+						// Show error
+						const errorDiv = document.getElementById('error');
+						errorDiv.textContent =
+							'Error fetching recent games: ' + error.message;
 						errorDiv.style.display = 'block';
 					}
 				});
