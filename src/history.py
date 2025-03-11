@@ -49,6 +49,10 @@ class BCCrashMonitor:
             db_engine: SQLAlchemy engine instance for database operations.
             verbose_logging (bool, optional): Whether to log detailed game results. Defaults to False.
         """
+        # Configure logger
+        self.logger = logging.getLogger("bcgame.monitor")
+        self.verbose_logging = verbose_logging
+
         # API configuration
         self.api_base_url = api_base_url or config.API_BASE_URL
         self.api_history_endpoint = api_history_endpoint or config.API_HISTORY_ENDPOINT
@@ -73,15 +77,16 @@ class BCCrashMonitor:
         # Database configuration
         self.database_enabled = database_enabled if database_enabled is not None else config.DATABASE_ENABLED
         self.db_engine = db_engine
-        if self.database_enabled and db_engine:
-            self.logger.info("Database enabled, using provided engine")
-        else:
-            self.logger.info(
-                f"Database storage is {'enabled' if self.database_enabled else 'disabled'}")
 
-        # Logging
-        self.logger = logging.getLogger("bc_crash_monitor")
-        self.verbose_logging = verbose_logging
+        if self.database_enabled:
+            if self.db_engine:
+                self.logger.info("Database storage enabled")
+            else:
+                self.logger.warning(
+                    "Database storage enabled but no DB engine provided")
+                self.database_enabled = False
+        else:
+            self.logger.info("Database storage disabled")
 
     def register_game_callback(self, callback: Callable[[Dict[str, Any]], Awaitable[None]]):
         """
@@ -317,7 +322,7 @@ class BCCrashMonitor:
             games = await self.get_latest_games()
 
             if not games:
-                logger.warning("No games returned from API")
+                self.logger.warning("No games returned from API")
                 return
 
             # Process each game
@@ -364,7 +369,7 @@ class BCCrashMonitor:
                 self.last_processed_game_id = game_id
 
                 # Store in database if enabled
-                if self.db_engine:
+                if self.database_enabled and self.db_engine:
                     try:
                         # Create a dictionary with the game data
                         db_game = {
@@ -379,17 +384,18 @@ class BCCrashMonitor:
                         from src.db.operations import store_crash_game
                         await store_crash_game(self.db_engine, db_game)
                     except Exception as e:
-                        logger.error(f"Error storing game in database: {e}")
+                        self.logger.error(
+                            f"Error storing game in database: {e}")
 
                 # Call the game callbacks
                 for callback in self.game_callbacks:
                     try:
                         await callback(game_data)
                     except Exception as e:
-                        logger.error(f"Error in game callback: {e}")
+                        self.logger.error(f"Error in game callback: {e}")
 
         except Exception as e:
-            logger.error(f"Error polling and processing games: {e}")
+            self.logger.error(f"Error polling and processing games: {e}")
 
     async def run(self):
         """Run the monitor loop"""
