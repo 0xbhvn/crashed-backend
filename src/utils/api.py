@@ -58,6 +58,15 @@ async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str 
         async with aiohttp.ClientSession() as session:
             start_time = time.time()
 
+            # Debug: Log full request details
+            debug_info = {
+                "url": url,
+                "headers": config.API_HEADERS,
+                "payload": payload
+            }
+            logger.debug(
+                f"API Request details: {json.dumps(debug_info, indent=2)}")
+
             # Make POST request with proper headers and payload
             async with session.post(
                 url,
@@ -89,7 +98,12 @@ async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str 
                         # Convert to expected format for compatibility
                         converted_data = {
                             'data': {
-                                'items': json_data['data']['list']
+                                'items': json_data['data']['list'],
+                                # Preserve pagination metadata
+                                'page': json_data['data'].get('page', page),
+                                'pageSize': json_data['data'].get('pageSize', config.PAGE_SIZE),
+                                'total': json_data['data'].get('total', 0),
+                                'totalPage': json_data['data'].get('totalPage', 0)
                             }
                         }
                         return converted_data

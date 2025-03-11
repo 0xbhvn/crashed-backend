@@ -75,7 +75,7 @@ The application can be configured using environment variables:
 - `API_PORT`: Port for the REST API server (default: 3000)
 - `HEALTH_PORT`: Port for the health check server (default: 8080)
 
-### Calculation Settings
+### Authentication & Calculation Settings
 
 - `BC_GAME_SALT`: Salt value for crash calculation (required for accurate calculations)
 

@@ -26,16 +26,20 @@ GAME_URL = "crash"  # Game URL path for crash game
 
 # API request headers
 API_HEADERS = {
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "en",
-    "content-type": "application/json",
-    "origin": "https://bc.game",
-    "referer": "https://bc.game/game/crash",
-    "user-agent": "Mozilla/5.0 (compatible; BC Game Crash Monitor Bot/0.2.0)"
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/plain, */*",
+    "Sec-Fetch-Site": "same-origin",
+    "Accept-Language": "en",
+    "Sec-Fetch-Mode": "cors",
+    "Origin": "https://bc.game",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15",
+    "Referer": "https://bc.game/game/crash",
+    "Sec-Fetch-Dest": "empty",
+    "Priority": "u=3, i"
 }
 
 # Page size for API requests (number of games per page)
-PAGE_SIZE = int(get_env_var('PAGE_SIZE', '100'))
+PAGE_SIZE = int(get_env_var('PAGE_SIZE', '10'))
 
 # Calculation settings
 BC_GAME_SALT = get_env_var('BC_GAME_SALT', '')
@@ -59,7 +63,7 @@ DATABASE_URL = get_env_var(
 # Catchup settings
 CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
 CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
-CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '100'))
+CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '10'))
 
 # Timezone settings
 TIMEZONE = get_env_var('TIMEZONE', 'UTC')
@@ -128,16 +132,20 @@ def reload_config():
     API_HISTORY_ENDPOINT = get_env_var(
         'API_HISTORY_ENDPOINT', '/api/game/bet/multi/history')
     GAME_URL = get_env_var('GAME_URL', 'crash')
-    PAGE_SIZE = int(get_env_var('PAGE_SIZE', '20'))
+    PAGE_SIZE = int(get_env_var('PAGE_SIZE', '10'))
 
     # API headers for requests
     API_HEADERS = {
-        "accept": "application/json, text/plain, */*",
-        "accept-language": "en-US,en;q=0.9",
-        "content-type": "application/json",
-        "origin": "https://bc.game",
-        "referer": "https://bc.game/game/crash",
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "Sec-Fetch-Site": "same-origin",
+        "Accept-Language": "en",
+        "Sec-Fetch-Mode": "cors",
+        "Origin": "https://bc.game",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Safari/605.1.15",
+        "Referer": "https://bc.game/game/crash",
+        "Sec-Fetch-Dest": "empty",
+        "Priority": "u=3, i"
     }
 
     # Crash calculation
