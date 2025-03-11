@@ -64,6 +64,8 @@ DATABASE_URL = get_env_var(
 CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
 CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
 CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '10'))
+CATCHUP_START_GAME_ID = get_env_var('CATCHUP_START_GAME_ID', None)
+CATCHUP_END_GAME_ID = get_env_var('CATCHUP_END_GAME_ID', None)
 
 # Timezone settings
 TIMEZONE = get_env_var('TIMEZONE', 'UTC')
@@ -123,7 +125,7 @@ def reload_config():
     global POLL_INTERVAL, RETRY_INTERVAL, MAX_HISTORY_SIZE
     global LOG_LEVEL
     global DATABASE_ENABLED, DATABASE_URL
-    global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE
+    global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE, CATCHUP_START_GAME_ID, CATCHUP_END_GAME_ID
     global TIMEZONE
     global APP_NAME, APP_VERSION
 
@@ -170,6 +172,8 @@ def reload_config():
     CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
     CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
     CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '20'))
+    CATCHUP_START_GAME_ID = get_env_var('CATCHUP_START_GAME_ID', None)
+    CATCHUP_END_GAME_ID = get_env_var('CATCHUP_END_GAME_ID', None)
 
     # Timezone settings
     TIMEZONE = get_env_var('TIMEZONE', 'UTC')

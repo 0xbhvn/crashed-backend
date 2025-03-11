@@ -99,6 +99,8 @@ The application can be configured using environment variables:
 - `CATCHUP_ENABLED`: Whether to run catchup on startup (default: true)
 - `CATCHUP_PAGES`: Number of pages to fetch during catchup (default: 20)
 - `CATCHUP_BATCH_SIZE`: Batch size for concurrent requests during catchup (default: 20)
+- `CATCHUP_START_GAME_ID`: Starting game ID for catchup (optional, only process games with ID >= this value)
+- `CATCHUP_END_GAME_ID`: Ending game ID for catchup (optional, only process games with ID <= this value)
 
 ### Timezone Settings
 
@@ -123,6 +125,9 @@ python -m src monitor --skip-polling
 
 # Run catchup only
 python -m src catchup --pages 50 --batch-size 10
+
+# Run catchup for a specific game ID range
+python -m src catchup --start-game-id 7935000 --end-game-id 7935100
 ```
 
 ### Command-line Arguments
@@ -134,6 +139,8 @@ python -m src catchup --pages 50 --batch-size 10
 - `catchup`: Run only the historical data catchup
   - `--pages`: Number of pages to fetch (default: from config)
   - `--batch-size`: Batch size for concurrent requests (default: from config)
+  - `--start-game-id`: Starting game ID (optional, only process games with ID >= this value)
+  - `--end-game-id`: Ending game ID (optional, only process games with ID <= this value)
 
 ### API
 
