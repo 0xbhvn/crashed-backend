@@ -24,6 +24,14 @@ from .db import get_database, CrashGame, create_migration, upgrade_database, dow
 # Global reference to the running monitor instance
 _RUNNING_MONITOR = None
 
+# Import observer status tracking
+observer_status = {
+    "is_running": False,
+    "last_update": None,
+    "last_game_id": None,
+    "connection_status": "disconnected"
+}
+
 
 def get_running_monitor() -> Optional[BCCrashMonitor]:
     """

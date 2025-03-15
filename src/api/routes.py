@@ -7,6 +7,7 @@ This module defines the API endpoints for the BC Game Crash Monitor application.
 import logging
 from typing import Dict, List, Any, Optional
 from aiohttp import web
+from datetime import datetime
 
 from .utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER
 from ..db.engine import Database
@@ -154,6 +155,54 @@ async def get_game_by_id(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error(f"Error in get_game_by_id: {e}")
         return error_response(str(e), 500)
+
+
+@routes.get('/api/observer/status')
+async def get_observer_status(request: web.Request) -> web.Response:
+    """
+    Get the current status of the observer.
+
+    Returns a JSON object with the observer's status information.
+    """
+    try:
+        # Import observer status from app.py
+        from ..app import observer_status
+        return json_response(observer_status)
+    except Exception as e:
+        logger.error(f"Error in get_observer_status: {e}")
+        return error_response(str(e), 500)
+
+
+@routes.post('/api/observer/ping')
+async def update_observer_status(request: web.Request) -> web.Response:
+    """
+    Update the observer's status from the observer process.
+
+    Request body should contain the observer's status information.
+    """
+    try:
+        # Import observer status from app.py
+        from ..app import observer_status
+
+        # Parse request JSON
+        data = await request.json()
+
+        # Update status information
+        observer_status["is_running"] = data.get("is_running", False)
+
+        # Fix: Use datetime.now() directly instead of convert_datetime_to_timezone(None)
+        observer_status["last_update"] = datetime.now().isoformat()
+
+        if "last_game_id" in data:
+            observer_status["last_game_id"] = data["last_game_id"]
+
+        if "connection_status" in data:
+            observer_status["connection_status"] = data["connection_status"]
+
+        return json_response({"success": True, "status": observer_status})
+    except Exception as e:
+        logger.error(f"Error updating observer status: {e}")
+        return error_response(f"Error updating observer status: {str(e)}", 500)
 
 
 def setup_api_routes(app: web.Application) -> None:
