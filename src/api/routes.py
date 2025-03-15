@@ -70,8 +70,8 @@ async def get_games(request: web.Request) -> web.Response:
                 game_dict = {
                     'gameId': game.gameId,
                     'hashValue': game.hashValue,
-                    'crashPoint': float(game.crashPoint),
-                    'calculatedPoint': float(game.calculatedPoint),
+                    'crashPoint': float(game.crashPoint) if game.crashPoint is not None else None,
+                    'calculatedPoint': float(game.calculatedPoint) if game.calculatedPoint is not None else None,
                     'crashedFloor': int(game.crashedFloor) if game.crashedFloor else None,
                     'endTime': convert_datetime_to_timezone(game.endTime, timezone_name),
                     'prepareTime': convert_datetime_to_timezone(game.prepareTime, timezone_name),
@@ -137,8 +137,8 @@ async def get_game_by_id(request: web.Request) -> web.Response:
         game_data = {
             'gameId': game.gameId,
             'hashValue': game.hashValue,
-            'crashPoint': float(game.crashPoint),
-            'calculatedPoint': float(game.calculatedPoint),
+            'crashPoint': float(game.crashPoint) if game.crashPoint is not None else None,
+            'calculatedPoint': float(game.calculatedPoint) if game.calculatedPoint is not None else None,
             'crashedFloor': int(game.crashedFloor) if game.crashedFloor else None,
             'endTime': convert_datetime_to_timezone(game.endTime, timezone_name),
             'prepareTime': convert_datetime_to_timezone(game.prepareTime, timezone_name),

@@ -316,8 +316,8 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
                     game_dict = {
                         'gameId': game.gameId,
                         'hashValue': game.hashValue,
-                        'crashPoint': float(game.crashPoint),
-                        'calculatedPoint': float(game.calculatedPoint),
+                        'crashPoint': float(game.crashPoint) if game.crashPoint is not None else None,
+                        'calculatedPoint': float(game.calculatedPoint) if game.calculatedPoint is not None else None,
                         'crashedFloor': int(game.crashedFloor) if game.crashedFloor else None,
                         'endTime': game.endTime.isoformat() if game.endTime else None,
                         'prepareTime': game.prepareTime.isoformat() if game.prepareTime else None,
