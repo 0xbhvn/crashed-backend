@@ -59,6 +59,27 @@ def parse_arguments():
         default=config.CATCHUP_BATCH_SIZE,
         help=f"Batch size for concurrent requests (default: {config.CATCHUP_BATCH_SIZE})"
     )
+    # Add game ID filtering options
+    catchup_parser.add_argument(
+        "--game-id",
+        type=str,
+        help="Fetch a specific game ID"
+    )
+    catchup_parser.add_argument(
+        "--start-game-id",
+        type=str,
+        help="Starting game ID for range (inclusive)"
+    )
+    catchup_parser.add_argument(
+        "--end-game-id",
+        type=str,
+        help="Ending game ID for range (inclusive)"
+    )
+    catchup_parser.add_argument(
+        "--game-ids",
+        type=str,
+        help="Comma-separated list of specific game IDs to fetch"
+    )
 
     # Database migration commands
     migrate_parser = subparsers.add_parser(
@@ -167,7 +188,10 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     if not skip_catchup and config.CATCHUP_ENABLED:
         try:
             logger.info("Running catchup process...")
-            await run_catchup(pages=config.CATCHUP_PAGES, batch_size=config.CATCHUP_BATCH_SIZE)
+            await run_catchup(
+                pages=config.CATCHUP_PAGES,
+                batch_size=config.CATCHUP_BATCH_SIZE
+            )
             logger.info("Catchup process completed")
         except Exception as e:
             logger.error(f"Error during catchup process: {e}")
@@ -201,17 +225,41 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     logger.info("BC Game Crash Monitor stopped")
 
 
-async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
+async def run_catchup(pages: int = 20, batch_size: int = 20,
+                      game_id: str = None, start_game_id: str = None,
+                      end_game_id: str = None, game_ids: str = None) -> None:
     """
     Run the catchup process to fetch historical game data.
 
     Args:
         pages: Number of pages to fetch
         batch_size: Batch size for concurrent requests
+        game_id: A specific game ID to fetch
+        start_game_id: Starting game ID for range (inclusive)
+        end_game_id: Ending game ID for range (inclusive)
+        game_ids: Comma-separated list of specific game IDs to fetch
     """
     logger = logging.getLogger("app.catchup")
     logger.info(
         f"Starting catchup with {pages} pages, batch size {batch_size}")
+
+    # Log filtering options if provided
+    if game_id:
+        logger.info(f"Will only process specific game ID: {game_id}")
+    if start_game_id:
+        logger.info(f"Will only process games with ID >= {start_game_id}")
+    if end_game_id:
+        logger.info(f"Will only process games with ID <= {end_game_id}")
+    if game_ids:
+        game_id_list = [gid.strip() for gid in game_ids.split(',')]
+        logger.info(f"Will only process specific game IDs: {game_id_list}")
+
+    # Prepare game IDs list for filtering
+    target_game_ids = None
+    if game_ids:
+        target_game_ids = [gid.strip() for gid in game_ids.split(',')]
+    elif game_id:
+        target_game_ids = [game_id]
 
     # Import here to avoid circular imports
     from .db.engine import Database
@@ -227,7 +275,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
             logger.error(f"Failed to connect to database: {e}")
             logger.warning("Continuing without database support")
 
-    # Set up batches
+    # Set up counters
     total_fetched = 0
     total_skipped = 0
     total_saved = 0
@@ -250,6 +298,36 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
         if not games:
             logger.warning(
                 f"No games found in batch (pages {page}-{end_page})")
+            continue
+
+        # Filter games based on criteria
+        filtered_games = []
+        for game in games:
+            game_id_val = str(game.get('gameId', ''))
+
+            # Skip if not in specific IDs list
+            if target_game_ids and game_id_val not in target_game_ids:
+                continue
+
+            # Skip if game ID is less than start_game_id
+            if start_game_id and game_id_val < start_game_id:
+                continue
+
+            # Skip if game ID is greater than end_game_id
+            if end_game_id and game_id_val > end_game_id:
+                continue
+
+            filtered_games.append(game)
+
+        skipped_count = len(games) - len(filtered_games)
+        if skipped_count > 0:
+            logger.info(
+                f"Skipped {skipped_count} games that didn't match the filtering criteria")
+
+        games = filtered_games
+        if not games:
+            logger.warning(
+                f"No games matching criteria found in batch (pages {page}-{end_page})")
             continue
 
         logger.info(f"Fetched {len(games)} games from pages {page}-{end_page}")
@@ -283,6 +361,11 @@ async def run_catchup(pages: int = 20, batch_size: int = 20) -> None:
 
         total_saved += saved_count
         total_failed += failed_count
+
+        # Early exit if we found all specific game IDs
+        if target_game_ids and len(target_game_ids) == saved_count:
+            logger.info(f"Found all specified game IDs, stopping catchup")
+            break
 
     logger.info(
         f"Catchup completed: Fetched {total_fetched}, "
@@ -409,7 +492,16 @@ async def main() -> None:
 
     # Run the appropriate command
     if args.command == "catchup":
-        await run_catchup(pages=args.pages, batch_size=args.batch_size)
+        await run_catchup(
+            pages=args.pages,
+            batch_size=args.batch_size,
+            game_id=args.game_id if hasattr(args, 'game_id') else None,
+            start_game_id=args.start_game_id if hasattr(
+                args, 'start_game_id') else None,
+            end_game_id=args.end_game_id if hasattr(
+                args, 'end_game_id') else None,
+            game_ids=args.game_ids if hasattr(args, 'game_ids') else None
+        )
     elif args.command == "migrate":
         if not args.migrate_command:
             logger.error("No migration command specified")
