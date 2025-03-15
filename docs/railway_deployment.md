@@ -44,13 +44,17 @@ Set additional environment variables in the Railway dashboard:
 
 ### 5. Application Configuration
 
-The application is configured with a Procfile that runs database migrations and starts the monitor with the `--skip-catchup` flag:
+The application is configured with a Procfile that runs database migrations and starts the monitor with the observer in headless mode:
 
 ```bash
-web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup'
+web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup --with-observer --headless'
 ```
 
-This prevents the catchup process from running during initialization, which helps avoid unnecessary API calls and database operations on startup.
+This configuration:
+- Runs database migrations on startup
+- Starts the monitor with the `--skip-catchup` flag to avoid unnecessary API calls
+- Enables the browser-based observer with the `--with-observer` flag for real-time detection
+- Runs the browser in headless mode with the `--headless` flag, which is required for server environments
 
 ### 6. Run Database Migrations
 
