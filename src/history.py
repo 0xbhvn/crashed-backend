@@ -50,6 +50,8 @@ class BCCrashMonitor:
 
         # Polling configuration
         self.polling_interval = polling_interval or config.POLL_INTERVAL
+        self.retry_interval = config.RETRY_INTERVAL
+        self.event_driven = False  # New flag to indicate if running in event-driven mode
 
         # Store latest hashes to avoid duplicates
         self.latest_hashes = deque(maxlen=config.MAX_HISTORY_SIZE)
@@ -69,6 +71,10 @@ class BCCrashMonitor:
         # Logging
         self.logger = logging.getLogger("bc_crash_monitor")
         self.verbose_logging = verbose_logging
+
+        # Event-related attributes
+        self.running = False
+        self.event_queue = asyncio.Queue()
 
         self.logger.info(
             f"Database storage is {'enabled' if self.database_enabled else 'disabled'}")
@@ -272,26 +278,194 @@ class BCCrashMonitor:
             self.logger.error(f"Error in poll_and_process: {e}")
             return []
 
-    async def run(self):
-        """Run the monitor loop"""
-        self.logger.info(
-            f"Starting BC Game Crash Monitor with polling interval {self.polling_interval}s")
+    async def process_game_event(self, game_data):
+        """
+        Process a game event received directly from the observer.
 
-        while True:
+        This method allows external observers to directly feed game data
+        into the monitor without going through the polling mechanism.
+
+        Args:
+            game_data: Dictionary with game information
+                Required keys:
+                - gameId: ID of the game
+                - crashPoint: Crash point value (can be float or string with 'x')
+        """
+        try:
+            # Validate required fields
+            if 'gameId' not in game_data or 'crashPoint' not in game_data:
+                self.logger.error("Missing required game data fields")
+                return False
+
+            # Convert crash_point to proper format if needed
+            crash_point = game_data['crashPoint']
+            if isinstance(crash_point, str) and crash_point.endswith('x'):
+                crash_point = float(crash_point[:-1])
+
+            # Skip if we've already processed this game
+            if self.last_processed_game_id == game_data['gameId']:
+                self.logger.debug(
+                    f"Skipping already processed game {game_data['gameId']}")
+                return False
+
+            # Process the game
+            self.logger.info(
+                f"Processing direct game event: {game_data['gameId']} with crash point {crash_point}x")
+
+            # Update last processed ID
+            self.last_processed_game_id = game_data['gameId']
+
+            # First, try to get complete game data from the API
+            complete_data = None
             try:
-                # Poll and process new games
-                await self.poll_and_process()
+                # Import the fetch_game_by_id function
+                from .utils.api import fetch_game_by_id
 
-                # Wait for the next polling interval
-                await asyncio.sleep(self.polling_interval)
-            except asyncio.CancelledError:
-                self.logger.info("Monitor loop cancelled")
-                break
-            except Exception as e:
-                self.logger.error(f"Error in monitor loop: {e}")
+                # Try to fetch the complete game data by ID
                 self.logger.info(
-                    f"Retrying in {self.retry_interval} seconds...")
-                await asyncio.sleep(self.retry_interval)
+                    f"Attempting to fetch complete data for game {game_data['gameId']}")
+                api_game = await fetch_game_by_id(
+                    game_id=game_data['gameId'],
+                    base_url=self.api_base_url,
+                    endpoint=self.api_history_endpoint
+                )
+
+                if api_game:
+                    self.logger.info(
+                        f"Found complete data for game {game_data['gameId']} from API")
+
+                    # Calculate crash point using the hash as the seed if available
+                    hash_value = api_game.get('hashValue')
+                    if hash_value:
+                        calculated_crash = self.calculate_crash_point(
+                            seed=hash_value, salt=self.salt)
+                        api_game['calculatedPoint'] = calculated_crash
+
+                    complete_data = api_game
+                else:
+                    self.logger.warning(
+                        f"Could not find complete data for game {game_data['gameId']} from API")
+            except Exception as api_error:
+                self.logger.warning(
+                    f"Error fetching complete game data from API: {api_error}")
+
+            # Store in database if enabled
+            if self.database_enabled and self.db:
+                try:
+                    # Store game in database using the db module
+                    with self.db.get_session() as session:
+                        # Check if game already exists
+                        existing_game = session.query(CrashGame).filter(
+                            CrashGame.gameId == game_data['gameId']
+                        ).first()
+
+                        if not existing_game:
+                            if complete_data:
+                                # Use complete data from API
+                                new_game = CrashGame(**complete_data)
+                            else:
+                                # Fallback to minimal data from observer
+                                new_game = CrashGame(
+                                    gameId=game_data['gameId'],
+                                    crashPoint=float(crash_point)
+                                )
+                            session.add(new_game)
+                            session.commit()
+                            self.logger.debug(
+                                f"Stored game {game_data['gameId']} in database")
+                except Exception as db_error:
+                    self.logger.error(
+                        f"Error storing game in database: {db_error}")
+
+            # Prepare data for callbacks
+            if complete_data:
+                # If we have complete data, use it for callbacks
+                callback_data = complete_data
+            else:
+                # Fallback to minimal data with proper format
+                callback_data = {
+                    'gameId': game_data['gameId'],
+                    'crashPoint': f"{crash_point}x"
+                }
+
+            # Notify callbacks
+            await self.notify_game_callbacks(callback_data)
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error processing game event: {e}")
+            return False
+
+    async def add_game_event(self, game_data):
+        """
+        Add a game event to the queue for processing
+
+        Args:
+            game_data: Dictionary with game information
+        """
+        if self.running and self.event_driven:
+            await self.event_queue.put(game_data)
+            return True
+        else:
+            # If not running in event-driven mode, process directly
+            return await self.process_game_event(game_data)
+
+    async def run(self, event_driven=False):
+        """
+        Run the monitor loop
+
+        Args:
+            event_driven: If True, will run in event-driven mode instead of polling
+        """
+        self.running = True
+        self.event_driven = event_driven
+
+        if event_driven:
+            self.logger.info(
+                "Starting BC Game Crash Monitor in event-driven mode")
+            # Run event-driven loop
+            try:
+                while self.running:
+                    try:
+                        # Wait for game events from the queue
+                        game_data = await self.event_queue.get()
+                        await self.process_game_event(game_data)
+                        self.event_queue.task_done()
+                    except asyncio.CancelledError:
+                        self.logger.info("Event loop cancelled")
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error in event loop: {e}")
+            finally:
+                self.running = False
+                self.logger.info("Event-driven monitor stopped")
+        else:
+            self.logger.info(
+                f"Starting BC Game Crash Monitor with polling interval {self.polling_interval}s")
+            # Run polling loop
+            try:
+                while self.running:
+                    try:
+                        # Poll and process new games
+                        await self.poll_and_process()
+
+                        # Wait for the next polling interval
+                        await asyncio.sleep(self.polling_interval)
+                    except asyncio.CancelledError:
+                        self.logger.info("Polling loop cancelled")
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error in polling loop: {e}")
+                        self.logger.info(
+                            f"Retrying in {self.retry_interval} seconds...")
+                        await asyncio.sleep(self.retry_interval)
+            finally:
+                self.running = False
+                self.logger.info("Polling monitor stopped")
+
+    def stop(self):
+        """Stop the monitor"""
+        self.running = False
 
     def get_latest_results(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """

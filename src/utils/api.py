@@ -296,3 +296,52 @@ async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
 
     logger.info(f"Fetched {len(all_games)} games from {num_pages} pages")
     return all_games
+
+
+async def fetch_game_by_id(game_id: str, base_url: str = None, endpoint: str = None) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a specific game by its ID from the BC Game API.
+
+    Args:
+        game_id: The game ID to fetch
+        base_url: API base URL (default from config)
+        endpoint: API endpoint (default from config)
+
+    Returns:
+        Processed game data dictionary or None if game not found
+    """
+    base_url = base_url or config.API_BASE_URL
+    endpoint = endpoint or config.API_HISTORY_ENDPOINT
+
+    logger.info(f"Fetching specific game by ID: {game_id}")
+
+    try:
+        # First try to get the game from recent history
+        history_response = await fetch_game_history(page=1, base_url=base_url, endpoint=endpoint)
+
+        if history_response and 'data' in history_response and 'items' in history_response['data']:
+            for game in history_response['data']['items']:
+                if str(game.get('gameId', '')) == str(game_id):
+                    logger.info(f"Found game {game_id} in recent history")
+                    return process_game_data(game)
+
+        # If not found in first page, try a few more pages
+        for page in range(2, 5):  # Try pages 2-4
+            history_response = await fetch_game_history(page=page, base_url=base_url, endpoint=endpoint)
+
+            if history_response and 'data' in history_response and 'items' in history_response['data']:
+                for game in history_response['data']['items']:
+                    if str(game.get('gameId', '')) == str(game_id):
+                        logger.info(
+                            f"Found game {game_id} in history page {page}")
+                        return process_game_data(game)
+
+        logger.warning(f"Game {game_id} not found in recent history pages")
+        return None
+
+    except APIError as e:
+        logger.error(f"API error fetching game by ID: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching game by ID: {e}")
+        return None

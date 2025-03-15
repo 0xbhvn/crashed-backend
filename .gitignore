@@ -168,3 +168,6 @@ logs/
 *.bak
 *.swp
 *.swo
+
+# Images
+*.png

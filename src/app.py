@@ -13,12 +13,26 @@ import logging
 from typing import Optional, Dict, Any
 from aiohttp import web
 import gc
+from datetime import datetime
 
 # Import from local modules
 from . import config
 from .history import BCCrashMonitor
 from .utils import load_env, configure_logging, fetch_game_history, fetch_games_batch
 from .db import get_database, CrashGame, create_migration, upgrade_database, downgrade_database, show_migrations
+
+# Global reference to the running monitor instance
+_RUNNING_MONITOR = None
+
+
+def get_running_monitor() -> Optional[BCCrashMonitor]:
+    """
+    Get the currently running monitor instance.
+
+    Returns:
+        The BCCrashMonitor instance if one is running, or None.
+    """
+    return _RUNNING_MONITOR
 
 
 def parse_arguments():
@@ -42,6 +56,21 @@ def parse_arguments():
         "--skip-polling",
         action="store_true",
         help="Skip the polling process and only run the API server"
+    )
+    monitor_parser.add_argument(
+        "--event-driven",
+        action="store_true",
+        help="Run in event-driven mode (waits for game events instead of polling)"
+    )
+    monitor_parser.add_argument(
+        "--with-observer",
+        action="store_true",
+        help="Launch the browser-based observer as part of the monitor process"
+    )
+    monitor_parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run the observer in headless mode (no visible browser window)"
     )
 
     # Catchup command
@@ -109,14 +138,24 @@ def parse_arguments():
     return parser.parse_args()
 
 
-async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) -> None:
+async def run_monitor(
+    skip_catchup: bool = False,
+    skip_polling: bool = False,
+    event_driven: bool = False,
+    with_observer: bool = False,
+    headless: bool = False
+) -> None:
     """
     Run the BC Game Crash Monitor
 
     Args:
         skip_catchup: Whether to skip the catchup process
         skip_polling: Whether to skip the polling process and only run the API server
+        event_driven: Whether to run in event-driven mode (waits for game events instead of polling)
+        with_observer: Whether to launch the browser-based observer
+        headless: Whether to run the observer in headless mode
     """
+    global _RUNNING_MONITOR
     logger = logging.getLogger("app")
 
     # Initialize the monitor
@@ -157,14 +196,6 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     await api_site.start()
     logger.info(f"API server started on port {api_port}")
 
-    # Skip the rest if we're only running the API server
-    if skip_polling:
-        logger.info("Polling skipped, only running API server")
-        # Keep the application running
-        while True:
-            await asyncio.sleep(3600)  # Sleep for an hour
-        return
-
     # Create monitor instance
     monitor = BCCrashMonitor(
         database_enabled=config.DATABASE_ENABLED,
@@ -173,8 +204,22 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         verbose_logging=False
     )
 
+    # Set the global reference to the monitor
+    _RUNNING_MONITOR = monitor
+
+    # Store monitor in app for access by API
+    api_app['monitor'] = monitor
+
+    # Skip the rest if we're only running the API server
+    if skip_polling and not event_driven and not with_observer:
+        logger.info("Polling skipped, only running API server")
+        # Keep the application running
+        while True:
+            await asyncio.sleep(3600)  # Sleep for an hour
+        return
+
     # Run catchup process if enabled
-    if not skip_catchup and config.CATCHUP_ENABLED:
+    if not skip_catchup and config.CATCHUP_ENABLED and not event_driven:
         try:
             logger.info("Running catchup process...")
             await run_catchup(
@@ -192,8 +237,16 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     async def log_game(game_data: Dict[str, Any]) -> None:
         """Log new games and broadcast via WebSocket."""
         # Convert crashPoint to float for logging
-        crash_point = float(game_data.get('crashPoint', 0))
+        crash_point_str = game_data.get('crashPoint', '0')
+        if isinstance(crash_point_str, str) and crash_point_str.endswith('x'):
+            crash_point = float(crash_point_str[:-1])
+        else:
+            crash_point = float(crash_point_str)
+
         game_id = game_data.get('gameId', 'unknown')
+
+        # Update last game timestamp for health check
+        monitor.last_game_timestamp = datetime.now()
 
         logger.info(f"New game: {game_id} with crash point: {crash_point}")
 
@@ -207,9 +260,111 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     # Register the callback with the monitor
     monitor.register_game_callback(log_game)
 
-    # Start the monitor (run forever)
-    logger.info("Starting BC Game Crash Monitor")
-    await monitor.run()
+    # Observer task
+    observer_task = None
+    fallback_polling_task = None
+
+    # Start the observer if requested
+    if with_observer:
+        try:
+            # Import the observer module
+            from . import observer
+
+            # This is needed because we're in a different module
+            observer.crash_monitor = monitor
+
+            # Start the observer in a separate task
+            logger.info("Starting BC Game Crash Observer...")
+            observer_task = asyncio.create_task(
+                observer.monitor_crash_game(headless=headless))
+            logger.info("BC Game Crash Observer started")
+
+        except Exception as e:
+            logger.error(f"Failed to start observer: {e}")
+            logger.warning("Continuing without observer")
+            # Auto-enable fallback polling if observer fails to start
+            with_observer = False
+
+    # Start the monitor based on the mode
+    if event_driven or with_observer:
+        logger.info("Starting BC Game Crash Monitor in event-driven mode")
+
+        # Define a fallback polling function
+        async def fallback_polling():
+            # Set a longer fallback interval (1 minute)
+            fallback_interval = 60
+
+            # How long to wait before fallback kicks in (5 minutes)
+            health_check_threshold = 300
+
+            logger.info(
+                f"Starting fallback polling mechanism (interval: {fallback_interval}s, threshold: {health_check_threshold}s)")
+
+            while True:
+                try:
+                    # Check if we should poll based on last game timestamp
+                    current_time = datetime.now()
+                    time_since_last_game = (current_time - monitor.last_game_timestamp).total_seconds(
+                    ) if hasattr(monitor, 'last_game_timestamp') else health_check_threshold
+
+                    if time_since_last_game > health_check_threshold:
+                        logger.warning(
+                            f"No games detected for {time_since_last_game:.1f} seconds, running fallback poll")
+                        # Run a poll to get new games
+                        await monitor.poll_and_process()
+
+                    # Always wait for the fallback interval
+                    await asyncio.sleep(fallback_interval)
+
+                except asyncio.CancelledError:
+                    logger.info("Fallback polling task cancelled")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in fallback polling: {e}")
+                    await asyncio.sleep(10)  # Wait before retrying
+
+        # Set initial timestamp
+        monitor.last_game_timestamp = datetime.now()
+
+        # Create tasks for monitor and fallback polling
+        monitor_task = asyncio.create_task(monitor.run(event_driven=True))
+        fallback_polling_task = asyncio.create_task(fallback_polling())
+
+        # Keep the application running to serve API requests
+        try:
+            while True:
+                # Check every hour if we need to exit
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            logger.info("Application shutdown requested")
+            # Cancel the monitor task
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+
+            # Cancel the fallback polling task
+            if fallback_polling_task:
+                logger.info("Shutting down fallback polling...")
+                fallback_polling_task.cancel()
+                try:
+                    await fallback_polling_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Cancel observer task if it exists
+            if observer_task:
+                logger.info("Shutting down observer...")
+                observer_task.cancel()
+                try:
+                    await observer_task
+                except asyncio.CancelledError:
+                    pass
+    else:
+        # Start the monitor in polling mode (run forever)
+        logger.info("Starting BC Game Crash Monitor in polling mode")
+        await monitor.run(event_driven=False)
 
     # Cleanup on exit
     await api_runner.cleanup()
@@ -437,7 +592,7 @@ async def start_health_check_server():
     logger.info(f"Health check server started on port {health_port}")
 
 
-async def main() -> None:
+async def main():
     """Main entry point for the application"""
     # Start health check server for Railway
     asyncio.create_task(start_health_check_server())
@@ -477,9 +632,28 @@ async def main() -> None:
         )
     else:
         # Default to monitor command
+        # If with-observer is specified, also force event-driven mode
         skip_catchup = getattr(args, "skip_catchup", False)
         skip_polling = getattr(args, "skip_polling", False)
-        await run_monitor(skip_catchup=skip_catchup, skip_polling=skip_polling)
+        with_observer = getattr(args, "with_observer", False)
+        headless = getattr(args, "headless", False)
+
+        # Force event-driven mode if observer is enabled
+        event_driven = getattr(args, "event_driven", False) or with_observer
+
+        # Log the configuration
+        if with_observer:
+            logger.info("Observer mode enabled")
+            if headless:
+                logger.info("Running observer in headless mode")
+
+        await run_monitor(
+            skip_catchup=skip_catchup,
+            skip_polling=skip_polling,
+            event_driven=event_driven,
+            with_observer=with_observer,
+            headless=headless
+        )
 
 
 def main_cli() -> None:
