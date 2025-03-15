@@ -20,7 +20,8 @@ import pytz
 from . import config
 
 # Import from utils
-from .utils import configure_logging, fetch_game_history, process_game_data, APIError
+from .utils import configure_logging, APIError
+from .utils.api import BCGameAPI, process_game_data
 
 # Import from db
 from .db import get_database, CrashGame
@@ -47,6 +48,13 @@ class BCCrashMonitor:
         self.api_history_endpoint = api_history_endpoint or config.API_HISTORY_ENDPOINT
         self.game_url = game_url or config.GAME_URL
         self.salt = salt or config.BC_GAME_SALT
+
+        # Create API client
+        self.api_client = BCGameAPI(
+            base_url=self.api_base_url,
+            history_endpoint=self.api_history_endpoint,
+            game_url=self.game_url
+        )
 
         # Polling configuration
         self.polling_interval = polling_interval or config.POLL_INTERVAL
@@ -135,19 +143,15 @@ class BCCrashMonitor:
             return 1.00
 
     async def fetch_crash_history(self):
-        """Fetch crash game history from the BC Game API using the utility function"""
+        """Fetch crash game history from the BC Game API using the API client"""
         self.logger.debug("Fetching crash history from API...")
 
         try:
-            # Use the utility function to fetch game history
-            game_list = await fetch_game_history(
-                base_url=self.api_base_url,
-                endpoint=self.api_history_endpoint,
-                page=1
-            )
+            # Use the API client to fetch game history
+            game_list = await self.api_client.fetch_game_history(page=1)
 
             self.logger.debug(
-                f"Successfully fetched {len(game_list)} crash history records")
+                f"Successfully fetched crash history records")
             return game_list
 
         except APIError as e:
@@ -156,6 +160,122 @@ class BCCrashMonitor:
         except Exception as e:
             self.logger.error(f"Error fetching crash history: {e}")
             return []
+
+    async def process_game_data(self, game_data: Dict[str, Any], is_from_observer: bool = False) -> bool:
+        """
+        Process a game regardless of source (API poll or observer)
+
+        Args:
+            game_data: Game data dictionary
+            is_from_observer: Whether this data came from the observer (minimal data)
+
+        Returns:
+            bool: True if processing was successful, False otherwise
+        """
+        try:
+            # Extract game ID and crash point for consistent handling
+            game_id = str(game_data.get('gameId', ''))
+
+            if not game_id:
+                self.logger.error("Missing game ID in data")
+                return False
+
+            # Skip if we've already processed this game
+            if game_id == self.last_processed_game_id:
+                self.logger.debug(f"Skipping already processed game {game_id}")
+                return False
+
+            # Convert crash point to float if needed
+            crash_point = game_data.get('crashPoint')
+            if isinstance(crash_point, str) and crash_point.endswith('x'):
+                crash_point = float(crash_point[:-1])
+            elif crash_point is None:
+                self.logger.warning(f"Missing crash point for game {game_id}")
+                crash_point = 1.0  # Default fallback
+
+            # If minimal data from observer, try to get complete data
+            complete_data = None
+            if is_from_observer:
+                self.logger.info(
+                    f"Processing observer event for game {game_id}")
+                try:
+                    # Import here to avoid circular imports
+                    from .utils.api import fetch_game_by_id
+
+                    # Try to fetch complete data
+                    self.logger.info(
+                        f"Attempting to fetch complete data for observer game {game_id}")
+                    complete_data = await fetch_game_by_id(
+                        game_id=game_id,
+                        base_url=self.api_base_url,
+                        endpoint=self.api_history_endpoint
+                    )
+
+                    if complete_data:
+                        self.logger.info(
+                            f"Found complete data for observer game {game_id}")
+                        game_data = complete_data  # Use complete data for processing
+                    else:
+                        self.logger.warning(
+                            f"Could not find complete data for observer game {game_id}")
+                except Exception as api_error:
+                    self.logger.warning(
+                        f"Error fetching complete data for observer game: {api_error}")
+
+            # Update last processed ID
+            self.last_processed_game_id = game_id
+
+            # Calculate crash point using hash as seed if available
+            hash_value = game_data.get('hashValue')
+            if hash_value and 'calculatedPoint' not in game_data:
+                calculated_crash = self.calculate_crash_point(
+                    seed=hash_value, salt=self.salt)
+                game_data['calculatedPoint'] = calculated_crash
+
+            # Store in database if enabled
+            if self.database_enabled and self.db:
+                try:
+                    with self.db.get_session() as session:
+                        # Check if game already exists
+                        existing_game = session.query(CrashGame).filter(
+                            CrashGame.gameId == game_id
+                        ).first()
+
+                        if not existing_game:
+                            # Create appropriate game object based on data completeness
+                            if is_from_observer and not complete_data:
+                                # Minimal data from observer
+                                new_game = CrashGame(
+                                    gameId=game_id,
+                                    crashPoint=float(crash_point)
+                                )
+                            else:
+                                # Complete data (either from API or enhanced observer data)
+                                new_game = CrashGame(**game_data)
+
+                            session.add(new_game)
+                            session.commit()
+                            self.logger.debug(
+                                f"Stored game {game_id} in database")
+                except Exception as db_error:
+                    self.logger.error(
+                        f"Error storing game in database: {db_error}")
+
+            # Ensure callback data has consistent format
+            callback_data = game_data
+            if 'crashPoint' in callback_data and not isinstance(callback_data['crashPoint'], str):
+                # Create copy to avoid modifying original
+                callback_data = dict(callback_data)
+                callback_data['crashPoint'] = f"{float(callback_data['crashPoint'])}x"
+
+            # Notify callbacks
+            await self.notify_game_callbacks(callback_data)
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error processing game data: {e}")
+            return False
 
     async def poll_and_process(self) -> List[Dict[str, Any]]:
         """
@@ -199,13 +319,6 @@ class BCCrashMonitor:
                     # Process the game data using the utility function
                     processed_data = process_game_data(game_data)
 
-                    # Calculate crash point using the hash as the seed
-                    hash_value = processed_data.get('hashValue')
-                    if hash_value:
-                        calculated_crash = self.calculate_crash_point(
-                            seed=hash_value, salt=self.salt)
-                        processed_data['calculatedPoint'] = calculated_crash
-
                     # Add to new results
                     new_results.append(processed_data)
                     self.logger.debug(f"Added new game {game_id} to results")
@@ -234,40 +347,8 @@ class BCCrashMonitor:
 
                 # Process in reverse order (oldest to newest)
                 for result in reversed(new_results):
-                    # Store in database if enabled
-                    if self.database_enabled and self.db:
-                        try:
-                            # Store game in database using the db module
-                            with self.db.get_session() as session:
-                                # Check if game already exists
-                                existing_game = session.query(CrashGame).filter(
-                                    CrashGame.gameId == result['gameId']
-                                ).first()
-
-                                if not existing_game:
-                                    # Create new game object
-                                    new_game = CrashGame(**result)
-                                    session.add(new_game)
-                                    session.commit()
-                        except Exception as e:
-                            self.logger.error(
-                                f"Error storing game in database: {e}")
-
-                    # Update last processed ID
-                    self.last_processed_game_id = result['gameId']
-
-                    # Notify callbacks
-                    await self.notify_game_callbacks(result)
-
-                    # Log for single game results only if verbose logging is enabled
-                    if self.verbose_logging and len(new_results) == 1:
-                        self.logger.info(
-                            f"Found 1 new crash result: Game #{result['gameId']} with crash point {result['crashPoint']}x")
-
-                # Log the overview only if verbose logging is enabled
-                if self.verbose_logging and len(new_results) > 1:
-                    self.logger.info(
-                        f"Found {len(new_results)} new crash results")
+                    # Process each game with the unified method
+                    await self.process_game_data(result)
 
                 return new_results
             else:
@@ -297,100 +378,8 @@ class BCCrashMonitor:
                 self.logger.error("Missing required game data fields")
                 return False
 
-            # Convert crash_point to proper format if needed
-            crash_point = game_data['crashPoint']
-            if isinstance(crash_point, str) and crash_point.endswith('x'):
-                crash_point = float(crash_point[:-1])
-
-            # Skip if we've already processed this game
-            if self.last_processed_game_id == game_data['gameId']:
-                self.logger.debug(
-                    f"Skipping already processed game {game_data['gameId']}")
-                return False
-
-            # Process the game
-            self.logger.info(
-                f"Processing direct game event: {game_data['gameId']} with crash point {crash_point}x")
-
-            # Update last processed ID
-            self.last_processed_game_id = game_data['gameId']
-
-            # First, try to get complete game data from the API
-            complete_data = None
-            try:
-                # Import the fetch_game_by_id function
-                from .utils.api import fetch_game_by_id
-
-                # Try to fetch the complete game data by ID
-                self.logger.info(
-                    f"Attempting to fetch complete data for game {game_data['gameId']}")
-                api_game = await fetch_game_by_id(
-                    game_id=game_data['gameId'],
-                    base_url=self.api_base_url,
-                    endpoint=self.api_history_endpoint
-                )
-
-                if api_game:
-                    self.logger.info(
-                        f"Found complete data for game {game_data['gameId']} from API")
-
-                    # Calculate crash point using the hash as the seed if available
-                    hash_value = api_game.get('hashValue')
-                    if hash_value:
-                        calculated_crash = self.calculate_crash_point(
-                            seed=hash_value, salt=self.salt)
-                        api_game['calculatedPoint'] = calculated_crash
-
-                    complete_data = api_game
-                else:
-                    self.logger.warning(
-                        f"Could not find complete data for game {game_data['gameId']} from API")
-            except Exception as api_error:
-                self.logger.warning(
-                    f"Error fetching complete game data from API: {api_error}")
-
-            # Store in database if enabled
-            if self.database_enabled and self.db:
-                try:
-                    # Store game in database using the db module
-                    with self.db.get_session() as session:
-                        # Check if game already exists
-                        existing_game = session.query(CrashGame).filter(
-                            CrashGame.gameId == game_data['gameId']
-                        ).first()
-
-                        if not existing_game:
-                            if complete_data:
-                                # Use complete data from API
-                                new_game = CrashGame(**complete_data)
-                            else:
-                                # Fallback to minimal data from observer
-                                new_game = CrashGame(
-                                    gameId=game_data['gameId'],
-                                    crashPoint=float(crash_point)
-                                )
-                            session.add(new_game)
-                            session.commit()
-                            self.logger.debug(
-                                f"Stored game {game_data['gameId']} in database")
-                except Exception as db_error:
-                    self.logger.error(
-                        f"Error storing game in database: {db_error}")
-
-            # Prepare data for callbacks
-            if complete_data:
-                # If we have complete data, use it for callbacks
-                callback_data = complete_data
-            else:
-                # Fallback to minimal data with proper format
-                callback_data = {
-                    'gameId': game_data['gameId'],
-                    'crashPoint': f"{crash_point}x"
-                }
-
-            # Notify callbacks
-            await self.notify_game_callbacks(callback_data)
-            return True
+            # Process using the unified method
+            return await self.process_game_data(game_data, is_from_observer=True)
 
         except Exception as e:
             self.logger.error(f"Error processing game event: {e}")

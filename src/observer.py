@@ -169,55 +169,61 @@ async def handle_new_crash(source, data_json):
         print(
             f"[{timestamp}] Crash logged - Game ID: {crash_data['gameId']}, Value: {crash_value}x")
 
-        # Prepare the payload
+        # Prepare the minimal payload - the monitor will enhance with API data if possible
         game_data = {
-            "timestamp": timestamp,
             "gameId": crash_data["gameId"],
             "crashPoint": crash_value
         }
 
-        # Try to send the event directly to the monitor
-        if crash_monitor:
-            try:
-                print(
-                    f"Sending game data directly to monitor: {crash_data['gameId']}")
-                # Add the event to the monitor's queue
-                success = await crash_monitor.add_game_event(game_data)
-                if success:
-                    print(
-                        f"Successfully sent crash data to monitor: {crash_data['gameId']}")
-                else:
-                    print(
-                        f"Failed to send crash data to monitor: {crash_data['gameId']}")
-            except Exception as direct_error:
-                print(
-                    f"Error sending data directly to monitor: {str(direct_error)}")
-                # Try to reconnect to the monitor
-                if await connect_to_monitor():
-                    # Try sending again if reconnection was successful
-                    try:
-                        await crash_monitor.add_game_event(game_data)
-                        print(
-                            f"Successfully sent crash data after reconnection: {crash_data['gameId']}")
-                    except Exception as retry_error:
-                        print(
-                            f"Error sending data after reconnection: {str(retry_error)}")
-        else:
-            # If we don't have a monitor connection, try to establish one
-            if await connect_to_monitor():
-                if crash_monitor:
-                    try:
-                        await crash_monitor.add_game_event(game_data)
-                        print(
-                            f"Successfully sent crash data after connecting: {crash_data['gameId']}")
-                    except Exception as connect_error:
-                        print(
-                            f"Error sending data after connecting: {str(connect_error)}")
-            else:
-                print("No monitor connection available, crash data not processed")
+        # Simplified communication with monitor
+        await send_to_monitor(game_data)
 
     except Exception as e:
         print(f"Error handling crash notification: {str(e)}")
+
+
+async def send_to_monitor(game_data):
+    """Send game data to the monitor with auto-reconnection if needed"""
+    global crash_monitor
+
+    # First attempt - try with existing connection
+    if crash_monitor:
+        try:
+            print(f"Sending game data to monitor: {game_data['gameId']}")
+            success = await crash_monitor.add_game_event(game_data)
+            if success:
+                print(
+                    f"Successfully sent crash data to monitor: {game_data['gameId']}")
+                return True
+            else:
+                print(
+                    f"Failed to send crash data to monitor: {game_data['gameId']}")
+        except Exception as e:
+            print(f"Error sending data to monitor: {str(e)}")
+            # Fall through to reconnection attempt
+
+    # Reconnection attempt
+    try:
+        print("Attempting to connect to monitor...")
+        if await connect_to_monitor():
+            if crash_monitor:
+                try:
+                    success = await crash_monitor.add_game_event(game_data)
+                    if success:
+                        print(
+                            f"Successfully sent crash data after reconnection: {game_data['gameId']}")
+                        return True
+                    else:
+                        print(
+                            f"Failed to send crash data after reconnection: {game_data['gameId']}")
+                except Exception as e:
+                    print(f"Error sending data after reconnection: {str(e)}")
+        else:
+            print("No monitor connection available, crash data not processed")
+    except Exception as e:
+        print(f"Error in reconnection attempt: {str(e)}")
+
+    return False
 
 
 async def add_anti_bot_evasion(page):

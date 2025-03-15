@@ -25,111 +25,221 @@ class APIError(Exception):
     pass
 
 
-async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str = None) -> Dict[str, Any]:
-    """
-    Fetch game history from the BC Game API.
+class BCGameAPI:
+    """Client for BC Game API operations"""
 
-    Args:
-        page: Page number to fetch
-        base_url: API base URL (default from config)
-        endpoint: API endpoint (default from config)
+    def __init__(self, base_url: Optional[str] = None, history_endpoint: Optional[str] = None,
+                 game_url: Optional[str] = None):
+        """
+        Initialize the BC Game API client
 
-    Returns:
-        Dictionary containing game history data
+        Args:
+            base_url: Base URL for the API (default from config)
+            history_endpoint: Endpoint for game history (default from config)
+            game_url: Game URL path (default from config)
+        """
+        self.base_url = base_url or config.API_BASE_URL
+        self.history_endpoint = history_endpoint or config.API_HISTORY_ENDPOINT
+        self.game_url = game_url or config.GAME_URL
+        self.logger = logging.getLogger(__name__)
 
-    Raises:
-        APIError: If there was an error fetching the history
-    """
-    base_url = base_url or config.API_BASE_URL
-    endpoint = endpoint or config.API_HISTORY_ENDPOINT
+    async def fetch_game_history(self, page: int = 1) -> Dict[str, Any]:
+        """
+        Fetch game history from the BC Game API.
 
-    url = f"{base_url}{endpoint}"
+        Args:
+            page: Page number to fetch
 
-    # Prepare request payload based on the curl command
-    payload = {
-        "gameUrl": config.GAME_URL,
-        "page": page,
-        "pageSize": config.PAGE_SIZE
-    }
+        Returns:
+            Dictionary containing game history data
 
-    logger.info(f"Fetching game history from page {page}")
+        Raises:
+            APIError: If there was an error fetching the history
+        """
+        url = f"{self.base_url}{self.history_endpoint}"
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            start_time = time.time()
+        # Prepare request payload based on the curl command
+        payload = {
+            "gameUrl": self.game_url,
+            "page": page,
+            "pageSize": config.PAGE_SIZE
+        }
 
-            # Debug: Log full request details
-            debug_info = {
-                "url": url,
-                "headers": config.API_HEADERS,
-                "payload": payload
-            }
-            logger.debug(
-                f"API Request details: {json.dumps(debug_info, indent=2)}")
+        self.logger.info(f"Fetching game history from page {page}")
 
-            # Make POST request with proper headers and payload
-            async with session.post(
-                url,
-                json=payload,
-                headers=config.API_HEADERS,
-                timeout=30
-            ) as response:
-                end_time = time.time()
-                elapsed = end_time - start_time
-                logger.debug(
-                    f"API request completed in {elapsed:.2f}s (status: {response.status})")
+        try:
+            async with aiohttp.ClientSession() as session:
+                start_time = time.time()
 
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(
-                        f"API returned error: {response.status} - {error_text}")
-                    raise APIError(
-                        f"Failed to fetch game history: {response.status} - {error_text}")
+                # Debug: Log full request details
+                debug_info = {
+                    "url": url,
+                    "headers": config.API_HEADERS,
+                    "payload": payload
+                }
+                self.logger.debug(
+                    f"API Request details: {json.dumps(debug_info, indent=2)}")
 
-                try:
-                    json_data = await response.json()
+                # Make POST request with proper headers and payload
+                async with session.post(
+                    url,
+                    json=payload,
+                    headers=config.API_HEADERS,
+                    timeout=30
+                ) as response:
+                    end_time = time.time()
+                    elapsed = end_time - start_time
+                    self.logger.debug(
+                        f"API request completed in {elapsed:.2f}s (status: {response.status})")
 
-                    # Check for the new response format (list instead of items)
-                    if 'data' in json_data and 'list' in json_data['data']:
-                        items_count = len(json_data['data']['list'])
-                        logger.debug(
-                            f"Fetched page {page} with {items_count} games")
+                    if response.status != 200:
+                        error_text = await response.text()
+                        self.logger.error(
+                            f"API returned error: {response.status} - {error_text}")
+                        raise APIError(
+                            f"Failed to fetch game history: {response.status} - {error_text}")
 
-                        # Convert to expected format for compatibility
-                        converted_data = {
-                            'data': {
-                                'items': json_data['data']['list'],
-                                # Preserve pagination metadata
-                                'page': json_data['data'].get('page', page),
-                                'pageSize': json_data['data'].get('pageSize', config.PAGE_SIZE),
-                                'total': json_data['data'].get('total', 0),
-                                'totalPage': json_data['data'].get('totalPage', 0)
+                    try:
+                        json_data = await response.json()
+
+                        # Check for the new response format (list instead of items)
+                        if 'data' in json_data and 'list' in json_data['data']:
+                            items_count = len(json_data['data']['list'])
+                            self.logger.debug(
+                                f"Fetched page {page} with {items_count} games")
+
+                            # Convert to expected format for compatibility
+                            converted_data = {
+                                'data': {
+                                    'items': json_data['data']['list'],
+                                    # Preserve pagination metadata
+                                    'page': json_data['data'].get('page', page),
+                                    'pageSize': json_data['data'].get('pageSize', config.PAGE_SIZE),
+                                    'total': json_data['data'].get('total', 0),
+                                    'totalPage': json_data['data'].get('totalPage', 0)
+                                }
                             }
-                        }
-                        return converted_data
-                    elif 'data' in json_data and 'items' in json_data['data']:
-                        # Original format
-                        items_count = len(json_data['data']['items'])
-                        logger.debug(
-                            f"Fetched page {page} with {items_count} games")
-                        return json_data
-                    else:
-                        logger.warning(
-                            f"Unexpected response format: {json_data}")
-                        # Return empty result with expected structure
-                        return {'data': {'items': []}}
+                            return converted_data
+                        elif 'data' in json_data and 'items' in json_data['data']:
+                            # Original format
+                            items_count = len(json_data['data']['items'])
+                            self.logger.debug(
+                                f"Fetched page {page} with {items_count} games")
+                            return json_data
+                        else:
+                            self.logger.warning(
+                                f"Unexpected response format: {json_data}")
+                            # Return empty result with expected structure
+                            return {'data': {'items': []}}
 
-                except json.JSONDecodeError as e:
-                    error_text = await response.text()
-                    logger.error(
-                        f"Failed to parse API response: {str(e)} - Response: {error_text[:200]}...")
-                    raise APIError(f"Failed to parse API response: {str(e)}")
-    except asyncio.TimeoutError:
-        logger.error(f"API request timed out for page {page}")
-        raise APIError(f"API request timed out for page {page}")
-    except Exception as e:
-        logger.error(f"Error fetching game history: {str(e)}")
-        raise APIError(f"Failed to fetch game history: {str(e)}")
+                    except json.JSONDecodeError as e:
+                        error_text = await response.text()
+                        self.logger.error(
+                            f"Failed to parse API response: {str(e)} - Response: {error_text[:200]}...")
+                        raise APIError(
+                            f"Failed to parse API response: {str(e)}")
+        except asyncio.TimeoutError:
+            self.logger.error(f"API request timed out for page {page}")
+            raise APIError(f"API request timed out for page {page}")
+        except Exception as e:
+            self.logger.error(f"Error fetching game history: {str(e)}")
+            raise APIError(f"Failed to fetch game history: {str(e)}")
+
+    async def fetch_games_batch(self, start_page: int = 1, num_pages: int = 1,
+                                end_page: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch multiple pages of game history concurrently.
+
+        Args:
+            start_page: Starting page number
+            num_pages: Number of pages to fetch
+            end_page: End page number (overrides num_pages if provided)
+
+        Returns:
+            List of processed game data dictionaries
+        """
+        # Calculate the number of pages to fetch
+        if end_page is not None:
+            num_pages = end_page - start_page + 1
+
+        tasks = []
+        all_games = []
+
+        # Create tasks for each page
+        for page_offset in range(num_pages):
+            page = start_page + page_offset
+            tasks.append(self.fetch_game_history(page))
+
+        # Wait for all tasks to complete
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        for result in results:
+            if isinstance(result, Exception):
+                self.logger.error(f"Error fetching page: {result}")
+                continue
+
+            # Extract games from the response
+            if 'data' in result and 'items' in result['data']:
+                game_items = result['data']['items']
+
+                # Process each game
+                for game in game_items:
+                    try:
+                        processed_game = process_game_data(game, self.game_url)
+                        all_games.append(processed_game)
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error processing game data: {str(e)}")
+
+        self.logger.info(
+            f"Fetched {len(all_games)} games from {num_pages} pages")
+        return all_games
+
+    async def fetch_game_by_id(self, game_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a specific game by its ID from the BC Game API.
+
+        Args:
+            game_id: The game ID to fetch
+
+        Returns:
+            Processed game data dictionary or None if game not found
+        """
+        self.logger.info(f"Fetching specific game by ID: {game_id}")
+
+        try:
+            # First try to get the game from recent history
+            history_response = await self.fetch_game_history(page=1)
+
+            if history_response and 'data' in history_response and 'items' in history_response['data']:
+                for game in history_response['data']['items']:
+                    if str(game.get('gameId', '')) == str(game_id):
+                        self.logger.info(
+                            f"Found game {game_id} in recent history")
+                        return process_game_data(game, self.game_url)
+
+            # If not found in first page, try a few more pages
+            for page in range(2, 5):  # Try pages 2-4
+                history_response = await self.fetch_game_history(page=page)
+
+                if history_response and 'data' in history_response and 'items' in history_response['data']:
+                    for game in history_response['data']['items']:
+                        if str(game.get('gameId', '')) == str(game_id):
+                            self.logger.info(
+                                f"Found game {game_id} in history page {page}")
+                            return process_game_data(game, self.game_url)
+
+            self.logger.warning(
+                f"Game {game_id} not found in recent history pages")
+            return None
+
+        except APIError as e:
+            self.logger.error(f"API error fetching game by ID: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error fetching game by ID: {e}")
+            return None
 
 
 def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[str, Any]:
@@ -237,12 +347,30 @@ def process_game_data(game_data: Dict[str, Any], game_url: str = None) -> Dict[s
     return processed_data
 
 
-async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
-                            base_url: str = None, endpoint: str = None,
-                            game_url: str = None, end_page: int = None,
-                            batch_size: int = None) -> List[Dict[str, Any]]:
+# Create convenience functions that use the API class for backward compatibility
+async def fetch_game_history(page: int = 1, base_url: Optional[str] = None,
+                             endpoint: Optional[str] = None) -> Dict[str, Any]:
     """
-    Fetch multiple pages of game history concurrently.
+    Fetch game history from the BC Game API (Backward-compatible function).
+
+    Args:
+        page: Page number to fetch
+        base_url: API base URL (default from config)
+        endpoint: API endpoint (default from config)
+
+    Returns:
+        Dictionary containing game history data
+    """
+    api = BCGameAPI(base_url=base_url, history_endpoint=endpoint)
+    return await api.fetch_game_history(page)
+
+
+async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
+                            base_url: Optional[str] = None, endpoint: Optional[str] = None,
+                            game_url: Optional[str] = None, end_page: Optional[int] = None,
+                            batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Fetch multiple pages of game history concurrently (Backward-compatible function).
 
     Args:
         start_page: Starting page number
@@ -256,51 +384,15 @@ async def fetch_games_batch(start_page: int = 1, num_pages: int = 1,
     Returns:
         List of processed game data dictionaries
     """
-    # Use default values from config if not provided
-    base_url = base_url or config.API_BASE_URL
-    endpoint = endpoint or config.API_HISTORY_ENDPOINT
-    game_url = game_url or config.GAME_URL
-
-    # Calculate the number of pages to fetch
-    if end_page is not None:
-        num_pages = end_page - start_page + 1
-
-    tasks = []
-    all_games = []
-
-    # Create tasks for each page
-    for page_offset in range(num_pages):
-        page = start_page + page_offset
-        tasks.append(fetch_game_history(page, base_url, endpoint))
-
-    # Wait for all tasks to complete
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Process results
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error(f"Error fetching page: {result}")
-            continue
-
-        # Extract games from the response
-        if 'data' in result and 'items' in result['data']:
-            game_items = result['data']['items']
-
-            # Process each game
-            for game in game_items:
-                try:
-                    processed_game = process_game_data(game, game_url)
-                    all_games.append(processed_game)
-                except Exception as e:
-                    logger.error(f"Error processing game data: {str(e)}")
-
-    logger.info(f"Fetched {len(all_games)} games from {num_pages} pages")
-    return all_games
+    api = BCGameAPI(base_url=base_url,
+                    history_endpoint=endpoint, game_url=game_url)
+    return await api.fetch_games_batch(start_page, num_pages, end_page)
 
 
-async def fetch_game_by_id(game_id: str, base_url: str = None, endpoint: str = None) -> Optional[Dict[str, Any]]:
+async def fetch_game_by_id(game_id: str, base_url: Optional[str] = None,
+                           endpoint: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Fetch a specific game by its ID from the BC Game API.
+    Fetch a specific game by its ID from the BC Game API (Backward-compatible function).
 
     Args:
         game_id: The game ID to fetch
@@ -310,38 +402,5 @@ async def fetch_game_by_id(game_id: str, base_url: str = None, endpoint: str = N
     Returns:
         Processed game data dictionary or None if game not found
     """
-    base_url = base_url or config.API_BASE_URL
-    endpoint = endpoint or config.API_HISTORY_ENDPOINT
-
-    logger.info(f"Fetching specific game by ID: {game_id}")
-
-    try:
-        # First try to get the game from recent history
-        history_response = await fetch_game_history(page=1, base_url=base_url, endpoint=endpoint)
-
-        if history_response and 'data' in history_response and 'items' in history_response['data']:
-            for game in history_response['data']['items']:
-                if str(game.get('gameId', '')) == str(game_id):
-                    logger.info(f"Found game {game_id} in recent history")
-                    return process_game_data(game)
-
-        # If not found in first page, try a few more pages
-        for page in range(2, 5):  # Try pages 2-4
-            history_response = await fetch_game_history(page=page, base_url=base_url, endpoint=endpoint)
-
-            if history_response and 'data' in history_response and 'items' in history_response['data']:
-                for game in history_response['data']['items']:
-                    if str(game.get('gameId', '')) == str(game_id):
-                        logger.info(
-                            f"Found game {game_id} in history page {page}")
-                        return process_game_data(game)
-
-        logger.warning(f"Game {game_id} not found in recent history pages")
-        return None
-
-    except APIError as e:
-        logger.error(f"API error fetching game by ID: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching game by ID: {e}")
-        return None
+    api = BCGameAPI(base_url=base_url, history_endpoint=endpoint)
+    return await api.fetch_game_by_id(game_id)
