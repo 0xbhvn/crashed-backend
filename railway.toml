@@ -2,7 +2,7 @@
 # We don't need to specify the builder explicitly
 
 [deploy]
-# Health check configuration
+# Health check configuration - using port 8080 which is where your health check server runs
 healthcheckPath = "/"
 healthcheckTimeout = 300
 healthcheckPort = 8080
