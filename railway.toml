@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pip install -r requirements.txt && python -m playwright install chromium"
+buildCommand = "pip install -r requirements.txt && python -m playwright install chromium --with-deps"
 
 [deploy]
 # Start the application with observer in headless mode
@@ -14,10 +14,10 @@ useConnectionString = true
 
 # Explicitly set Nixpacks configuration
 [phases.setup]
-nixPkgs = ["python3", "postgresql_16.dev", "gcc"]
+nixPkgs = ["python3", "postgresql_16.dev", "gcc", "nodejs", "glib"]
 
 [phases.build]
-cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt", ". /opt/venv/bin/activate && python -m playwright install chromium"]
+cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt", ". /opt/venv/bin/activate && python -m playwright install chromium --with-deps"]
 
 [start]
 # Start the application with observer in headless mode

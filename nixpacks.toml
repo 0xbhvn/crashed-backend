@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["python3", "postgresql_16.dev", "gcc"]
+nixPkgs = ["python3", "postgresql_16.dev", "gcc", "nodejs", "glib"]
 
 [phases.install]
-cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt", ". /opt/venv/bin/activate && python -m playwright install chromium"]
+cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip install -r requirements.txt", ". /opt/venv/bin/activate && python -m playwright install chromium --with-deps"]
 
 [start]
 # Run migrations and then start the application with observer in headless mode

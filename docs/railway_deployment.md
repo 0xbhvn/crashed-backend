@@ -61,17 +61,28 @@ This configuration:
 
 When running with `--with-observer`, the application uses Playwright to automate a browser session for monitoring the BC Game website directly. Our deployment configuration handles this by:
 
-1. Installing Playwright Chromium during the build phase:
-
-   ```bash
-   python -m playwright install chromium
+1. Installing Playwright Chromium with required system dependencies:
    ```
-
+   python -m playwright install chromium --with-deps
+   ```
+   
+   The `--with-deps` flag ensures that all necessary system dependencies (like browsers and font libraries) are installed, which is critical for headless operation in container environments.
+   
 2. Running the browser in headless mode (`--headless` flag), which is necessary for server environments where no display is available.
 
-If you're experiencing issues with the observer, check the logs for Playwright-related errors, which might indicate problems with the Chromium installation.
+If you're experiencing issues with the observer, check the logs for Playwright-related errors, which might indicate problems with the Chromium installation or system dependencies.
 
-### 7. Run Database Migrations
+### 7. SSL Certificate Issues
+
+If you encounter SSL certificate verification errors when the application attempts to connect to bc.game's API, you may need to add this environment variable to your Railway project:
+
+```
+PYTHONHTTPSVERIFY=0
+```
+
+This will bypass SSL certificate verification. While not ideal for security, it can be necessary if the API's certificate chain can't be properly verified in the Railway environment.
+
+### 8. Run Database Migrations
 
 After deployment, you'll need to run database migrations. You can do this using the Railway CLI or by connecting to the application's shell in the Railway dashboard:
 
