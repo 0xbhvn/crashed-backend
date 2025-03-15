@@ -1,9 +1,8 @@
-[build]
-builder = "docker"
+# Docker will be used automatically because a Dockerfile exists
+# We don't need to specify the builder explicitly
 
 [deploy]
-# Start the application with observer in headless mode
-startCommand = "python -m src monitor --skip-catchup --with-observer --headless"
+# Health check configuration
 healthcheckPath = "/"
 healthcheckTimeout = 300
 healthcheckPort = 8080
