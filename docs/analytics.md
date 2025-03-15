@@ -23,13 +23,69 @@ These endpoints will find the most recent game that meets specific crash point c
 
 - **Last game with crash points >= X value**
   - Endpoint: `/api/analytics/last-game/min-crash-point/{value}`
+  - Method: GET
   - Parameters:
     - `value` (float): Minimum crash point value
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+  - Response:
+
+    ```json
+    {
+      "status": "success",
+      "data": {
+        "game": {
+          "gameId": "string",
+          "hashValue": "string",
+          "crashPoint": float,
+          "calculatedPoint": float,
+          "crashedFloor": integer,
+          "endTime": "datetime",
+          "prepareTime": "datetime",
+          "beginTime": "datetime"
+        },
+        "games_since": integer  // Number of games played since this matching game
+      }
+    }
+    ```
+
+  - Error Responses:
+    - 400: Invalid value parameter
+    - 404: No matching games found
+    - 500: Internal server error
 
 - **Last game with crash points == X floor value**
   - Endpoint: `/api/analytics/last-game/exact-floor/{value}`
+  - Method: GET
   - Parameters:
     - `value` (int): Exact floor value to match
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+  - Response:
+
+    ```json
+    {
+      "status": "success",
+      "data": {
+        "game": {
+          "gameId": "string",
+          "hashValue": "string",
+          "crashPoint": float,
+          "calculatedPoint": float,
+          "crashedFloor": integer,
+          "endTime": "datetime",
+          "prepareTime": "datetime",
+          "beginTime": "datetime"
+        },
+        "games_since": integer  // Number of games played since this matching game
+      }
+    }
+    ```
+
+  - Error Responses:
+    - 400: Invalid value parameter (must be integer)
+    - 404: No matching games found
+    - 500: Internal server error
 
 - **Batch: Last games with crash points >= X values**
   - Endpoint: `/api/analytics/last-games/min-crash-points`
