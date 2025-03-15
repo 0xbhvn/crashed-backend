@@ -1,14 +1,16 @@
+# Git
 .git
 .gitignore
-.env
-.venv
-venv
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.DS_Store
 *.so
 .Python
+venv/
+ENV/
+env/
 build/
 develop-eggs/
 dist/
@@ -20,6 +22,23 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
+*.egg-info/
 .installed.cfg
-*.egg 
+*.egg
+
+# Environment
+.env
+.env.local
+.env.development
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+.DS_Store
+node_modules/
+*.log
+docs/ 

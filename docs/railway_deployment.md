@@ -44,14 +44,16 @@ Set additional environment variables in the Railway dashboard:
 
 ### 5. Application Configuration
 
-The application is configured with a Procfile that runs database migrations and starts the monitor with the observer in headless mode:
+The application is now configured to use a Docker-based deployment with a Dockerfile that uses the official Microsoft Playwright container image. This approach solves compatibility issues with system libraries and ensures Playwright works correctly in the Railway environment.
 
 ```bash
-web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup --with-observer --headless'
+# The Dockerfile uses the official Playwright image and runs:
+python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup --with-observer --headless
 ```
 
 This configuration:
 
+- Uses a pre-built container with all necessary Playwright dependencies
 - Runs database migrations on startup
 - Starts the monitor with the `--skip-catchup` flag to avoid unnecessary API calls
 - Enables the browser-based observer with the `--with-observer` flag for real-time detection
@@ -59,24 +61,15 @@ This configuration:
 
 ### 6. Browser Dependencies for Observer Mode
 
-When running with `--with-observer`, the application uses Playwright to automate a browser session for monitoring the BC Game website directly. Our deployment configuration handles this by:
+When running with `--with-observer`, the application uses Playwright to automate a browser session for monitoring the BC Game website directly. The Docker-based deployment handles all necessary system dependencies automatically.
 
-1. Installing Playwright Chromium with required system dependencies:
-   ```
-   python -m playwright install chromium --with-deps
-   ```
-   
-   The `--with-deps` flag ensures that all necessary system dependencies (like browsers and font libraries) are installed, which is critical for headless operation in container environments.
-   
-2. Running the browser in headless mode (`--headless` flag), which is necessary for server environments where no display is available.
-
-If you're experiencing issues with the observer, check the logs for Playwright-related errors, which might indicate problems with the Chromium installation or system dependencies.
+If you're experiencing issues with the observer, check the logs in the Railway dashboard for any error messages.
 
 ### 7. SSL Certificate Issues
 
 If you encounter SSL certificate verification errors when the application attempts to connect to bc.game's API, you may need to add this environment variable to your Railway project:
 
-```
+```text
 PYTHONHTTPSVERIFY=0
 ```
 
