@@ -159,7 +159,7 @@ These endpoints will find the most recent game that meets specific crash point c
     }
     ```
 
-#### 2. Crash Point Occurrence Analysis [Pending]
+#### 2. Crash Point Occurrence Analysis [Done]
 
 These endpoints will analyze how frequently specific crash points occur:
 
