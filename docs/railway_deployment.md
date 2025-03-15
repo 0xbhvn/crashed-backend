@@ -51,12 +51,27 @@ web: sh -c 'python -m src migrate upgrade --revision head && python -m src monit
 ```
 
 This configuration:
+
 - Runs database migrations on startup
 - Starts the monitor with the `--skip-catchup` flag to avoid unnecessary API calls
 - Enables the browser-based observer with the `--with-observer` flag for real-time detection
 - Runs the browser in headless mode with the `--headless` flag, which is required for server environments
 
-### 6. Run Database Migrations
+### 6. Browser Dependencies for Observer Mode
+
+When running with `--with-observer`, the application uses Playwright to automate a browser session for monitoring the BC Game website directly. Our deployment configuration handles this by:
+
+1. Installing Playwright Chromium during the build phase:
+
+   ```bash
+   python -m playwright install chromium
+   ```
+
+2. Running the browser in headless mode (`--headless` flag), which is necessary for server environments where no display is available.
+
+If you're experiencing issues with the observer, check the logs for Playwright-related errors, which might indicate problems with the Chromium installation.
+
+### 7. Run Database Migrations
 
 After deployment, you'll need to run database migrations. You can do this using the Railway CLI or by connecting to the application's shell in the Railway dashboard:
 
