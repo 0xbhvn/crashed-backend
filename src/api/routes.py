@@ -419,6 +419,485 @@ async def get_last_games_exact_floors(request: web.Request) -> web.Response:
         return error_response("Internal server error", status=500)
 
 
+@routes.get('/api/analytics/occurrences/min-crash-point/{value}')
+async def get_min_crash_point_occurrences_by_games(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of crash points >= specified value in the last N games.
+
+    Path parameters:
+        value (float): Minimum crash point value
+
+    Query parameters:
+        limit (int, optional): Number of games to analyze (default: 100)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get limit from query parameter
+        try:
+            limit = int(request.query.get('limit', '100'))
+            if limit < 1:
+                return error_response("Limit must be greater than 0.", status=400)
+        except ValueError:
+            return error_response("Invalid limit parameter.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            result = analytics.get_min_crash_point_occurrences_by_games(
+                session, value, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                result['first_game_time'] = convert_datetime_to_timezone(
+                    result['first_game_time'], timezone_name)
+                result['last_game_time'] = convert_datetime_to_timezone(
+                    result['last_game_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_occurrences_by_games: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/occurrences/min-crash-point/{value}/time')
+async def get_min_crash_point_occurrences_by_time(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of crash points >= specified value in the last N hours.
+
+    Path parameters:
+        value (float): Minimum crash point value
+
+    Query parameters:
+        hours (int, optional): Hours to look back (default: 1)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get hours from query parameter
+        try:
+            hours = int(request.query.get('hours', '1'))
+            if hours < 1:
+                return error_response("Hours must be greater than 0.", status=400)
+        except ValueError:
+            return error_response("Invalid hours parameter.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            result = analytics.get_min_crash_point_occurrences_by_time(
+                session, value, hours)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                result['start_time'] = convert_datetime_to_timezone(
+                    result['start_time'], timezone_name)
+                result['end_time'] = convert_datetime_to_timezone(
+                    result['end_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_occurrences_by_time: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/occurrences/exact-floor/{value}')
+async def get_exact_floor_occurrences_by_games(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of exact floor value in the last N games.
+
+    Path parameters:
+        value (int): Exact floor value
+
+    Query parameters:
+        limit (int, optional): Number of games to analyze (default: 100)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = int(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be an integer.", status=400)
+
+        # Get limit from query parameter
+        try:
+            limit = int(request.query.get('limit', '100'))
+            if limit < 1:
+                return error_response("Limit must be greater than 0.", status=400)
+        except ValueError:
+            return error_response("Invalid limit parameter.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            result = analytics.get_exact_floor_occurrences_by_games(
+                session, value, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                result['first_game_time'] = convert_datetime_to_timezone(
+                    result['first_game_time'], timezone_name)
+                result['last_game_time'] = convert_datetime_to_timezone(
+                    result['last_game_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_exact_floor_occurrences_by_games: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/occurrences/exact-floor/{value}/time')
+async def get_exact_floor_occurrences_by_time(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of exact floor value in the last N hours.
+
+    Path parameters:
+        value (int): Exact floor value
+
+    Query parameters:
+        hours (int, optional): Hours to look back (default: 1)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = int(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be an integer.", status=400)
+
+        # Get hours from query parameter
+        try:
+            hours = int(request.query.get('hours', '1'))
+            if hours < 1:
+                return error_response("Hours must be greater than 0.", status=400)
+        except ValueError:
+            return error_response("Invalid hours parameter.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            result = analytics.get_exact_floor_occurrences_by_time(
+                session, value, hours)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                result['start_time'] = convert_datetime_to_timezone(
+                    result['start_time'], timezone_name)
+                result['end_time'] = convert_datetime_to_timezone(
+                    result['end_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(f"Error in get_exact_floor_occurrences_by_time: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/occurrences/min-crash-points')
+async def get_min_crash_point_occurrences_by_games_batch(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of crash points >= specified values in the last N games.
+
+    Request body:
+        {
+            "values": [float],  // List of minimum crash point values
+            "limit": int  // Optional, number of games to analyze (default: 100)
+        }
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list):
+                return error_response("Invalid request body. 'values' must be a list.", status=400)
+            if not values:
+                return error_response("No values provided.", status=400)
+            # Convert all values to float
+            values = [float(v) for v in values]
+            # Get optional limit
+            limit = int(body.get('limit', 100))
+            if limit < 1:
+                return error_response("Limit must be greater than 0.", status=400)
+        except (json.JSONDecodeError, ValueError):
+            return error_response("Invalid request body or values.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            results = analytics.get_min_crash_point_occurrences_by_games_batch(
+                session, values, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for result in results.values():
+                    result['first_game_time'] = convert_datetime_to_timezone(
+                        result['first_game_time'], timezone_name)
+                    result['last_game_time'] = convert_datetime_to_timezone(
+                        result['last_game_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {str(value): result for value, result in results.items()}
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_occurrences_by_games_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/occurrences/min-crash-points/time')
+async def get_min_crash_point_occurrences_by_time_batch(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of crash points >= specified values in the last N hours.
+
+    Request body:
+        {
+            "values": [float],  // List of minimum crash point values
+            "hours": int  // Optional, hours to look back (default: 1)
+        }
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list):
+                return error_response("Invalid request body. 'values' must be a list.", status=400)
+            if not values:
+                return error_response("No values provided.", status=400)
+            # Convert all values to float
+            values = [float(v) for v in values]
+            # Get optional hours
+            hours = int(body.get('hours', 1))
+            if hours < 1:
+                return error_response("Hours must be greater than 0.", status=400)
+        except (json.JSONDecodeError, ValueError):
+            return error_response("Invalid request body or values.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            results = analytics.get_min_crash_point_occurrences_by_time_batch(
+                session, values, hours)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for result in results.values():
+                    result['start_time'] = convert_datetime_to_timezone(
+                        result['start_time'], timezone_name)
+                    result['end_time'] = convert_datetime_to_timezone(
+                        result['end_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {str(value): result for value, result in results.items()}
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_occurrences_by_time_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/occurrences/exact-floors')
+async def get_exact_floor_occurrences_by_games_batch(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of exact floor values in the last N games.
+
+    Request body:
+        {
+            "values": [int],  // List of floor values
+            "limit": int  // Optional, number of games to analyze (default: 100)
+        }
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list):
+                return error_response("Invalid request body. 'values' must be a list.", status=400)
+            if not values:
+                return error_response("No values provided.", status=400)
+            # Convert all values to int
+            values = [int(v) for v in values]
+            # Get optional limit
+            limit = int(body.get('limit', 100))
+            if limit < 1:
+                return error_response("Limit must be greater than 0.", status=400)
+        except (json.JSONDecodeError, ValueError):
+            return error_response("Invalid request body or values.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            results = analytics.get_exact_floor_occurrences_by_games_batch(
+                session, values, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for result in results.values():
+                    result['first_game_time'] = convert_datetime_to_timezone(
+                        result['first_game_time'], timezone_name)
+                    result['last_game_time'] = convert_datetime_to_timezone(
+                        result['last_game_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {str(value): result for value, result in results.items()}
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_exact_floor_occurrences_by_games_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/occurrences/exact-floors/time')
+async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web.Response:
+    """
+    Get total occurrences of exact floor values in the last N hours.
+
+    Request body:
+        {
+            "values": [int],  // List of floor values
+            "hours": int  // Optional, hours to look back (default: 1)
+        }
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list):
+                return error_response("Invalid request body. 'values' must be a list.", status=400)
+            if not values:
+                return error_response("No values provided.", status=400)
+            # Convert all values to int
+            values = [int(v) for v in values]
+            # Get optional hours
+            hours = int(body.get('hours', 1))
+            if hours < 1:
+                return error_response("Hours must be greater than 0.", status=400)
+        except (json.JSONDecodeError, ValueError):
+            return error_response("Invalid request body or values.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the occurrences
+        with db.get_session() as session:
+            results = analytics.get_exact_floor_occurrences_by_time_batch(
+                session, values, hours)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for result in results.values():
+                    result['start_time'] = convert_datetime_to_timezone(
+                        result['start_time'], timezone_name)
+                    result['end_time'] = convert_datetime_to_timezone(
+                        result['end_time'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {str(value): result for value, result in results.items()}
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_exact_floor_occurrences_by_time_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
 def setup_api_routes(app: web.Application) -> None:
     """
     Set up API routes for the application.

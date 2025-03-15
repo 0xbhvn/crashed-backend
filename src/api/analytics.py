@@ -8,8 +8,10 @@ import logging
 from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
+from datetime import datetime, timedelta, timezone
 
 from ..db.models import CrashGame
+from .. import config
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -179,4 +181,414 @@ def get_last_games_exact_floors(session: Session, values: List[int]) -> Dict[int
 
     except Exception as e:
         logger.error(f"Error getting last games with exact floors: {str(e)}")
+        raise
+
+
+def get_min_crash_point_occurrences_by_games(
+    session: Session,
+    min_value: float,
+    limit: int = 100
+) -> Dict[str, Any]:
+    """
+    Get the total occurrences of crash points >= specified value in the last N games.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point value to count
+        limit: Number of most recent games to analyze (default: 100)
+
+    Returns:
+        Dictionary containing:
+        - count: Number of occurrences
+        - total_games: Total games analyzed
+        - percentage: Percentage of games with crash point >= min_value
+        - first_game: First game in the analyzed set
+        - last_game: Last game in the analyzed set
+    """
+    try:
+        # Get the most recent 'limit' games
+        subquery = session.query(CrashGame.gameId)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .subquery()
+
+        # Count occurrences within these games
+        count = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.gameId.in_(subquery))\
+            .filter(CrashGame.crashPoint >= min_value)\
+            .scalar()
+
+        # Get first and last games in the set for reference
+        first_last_games = session.query(
+            func.min(CrashGame.endTime).label('first_time'),
+            func.max(CrashGame.endTime).label('last_time')
+        ).filter(CrashGame.gameId.in_(subquery)).first()
+
+        return {
+            'count': count,
+            'total_games': limit,
+            'percentage': (count / limit) * 100 if limit > 0 else 0,
+            'first_game_time': first_last_games.first_time,
+            'last_game_time': first_last_games.last_time
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Error getting min crash point occurrences by games: {str(e)}")
+        raise
+
+
+def get_min_crash_point_occurrences_by_time(
+    session: Session,
+    value: float,
+    hours: int = 1
+) -> Dict[str, Any]:
+    """
+    Get the total occurrences of crash points >= specified value in the last N hours.
+
+    Args:
+        session: SQLAlchemy session
+        value: Minimum crash point value to count
+        hours: Number of hours to look back (default: 1)
+
+    Returns:
+        Dictionary with count, total games, percentage, and time range
+    """
+    try:
+        # Calculate the time threshold in UTC
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # Get total games in the time period
+        total_games = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .scalar()
+
+        # Count occurrences within the time period
+        count = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .filter(CrashGame.crashPoint >= value)\
+            .scalar()
+
+        return {
+            'count': count,
+            'total_games': total_games,
+            'percentage': (count / total_games) * 100 if total_games > 0 else 0,
+            'start_time': start_time,
+            'end_time': end_time
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Error getting min crash point occurrences by time: {str(e)}")
+        raise
+
+
+def get_exact_floor_occurrences_by_games(
+    session: Session,
+    floor_value: int,
+    limit: int = 100
+) -> Dict[str, Any]:
+    """
+    Get the total occurrences of exact floor value in the last N games.
+
+    Args:
+        session: SQLAlchemy session
+        floor_value: Exact floor value to count
+        limit: Number of most recent games to analyze (default: 100)
+
+    Returns:
+        Dictionary containing:
+        - count: Number of occurrences
+        - total_games: Total games analyzed
+        - percentage: Percentage of games with exact floor value
+        - first_game: First game in the analyzed set
+        - last_game: Last game in the analyzed set
+    """
+    try:
+        # Get the most recent 'limit' games
+        subquery = session.query(CrashGame.gameId)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .subquery()
+
+        # Count occurrences within these games
+        count = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.gameId.in_(subquery))\
+            .filter(CrashGame.crashedFloor == floor_value)\
+            .scalar()
+
+        # Get first and last games in the set for reference
+        first_last_games = session.query(
+            func.min(CrashGame.endTime).label('first_time'),
+            func.max(CrashGame.endTime).label('last_time')
+        ).filter(CrashGame.gameId.in_(subquery)).first()
+
+        return {
+            'count': count,
+            'total_games': limit,
+            'percentage': (count / limit) * 100 if limit > 0 else 0,
+            'first_game_time': first_last_games.first_time,
+            'last_game_time': first_last_games.last_time
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Error getting exact floor occurrences by games: {str(e)}")
+        raise
+
+
+def get_exact_floor_occurrences_by_time(
+    session: Session,
+    value: int,
+    hours: int = 1
+) -> Dict[str, Any]:
+    """
+    Get the total occurrences of exact floor value in the last N hours.
+
+    Args:
+        session: SQLAlchemy session
+        value: Floor value to count
+        hours: Number of hours to look back (default: 1)
+
+    Returns:
+        Dictionary with count, total games, percentage, and time range
+    """
+    try:
+        # Calculate the time threshold in UTC
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # Get total games in the time period
+        total_games = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .scalar()
+
+        # Count occurrences within the time period
+        count = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .filter(CrashGame.crashedFloor == value)\
+            .scalar()
+
+        return {
+            'count': count,
+            'total_games': total_games,
+            'percentage': (count / total_games) * 100 if total_games > 0 else 0,
+            'start_time': start_time,
+            'end_time': end_time
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Error getting exact floor occurrences by time: {str(e)}")
+        raise
+
+
+def get_min_crash_point_occurrences_by_games_batch(
+    session: Session,
+    values: List[float],
+    limit: int = 100
+) -> Dict[float, Dict[str, Any]]:
+    """
+    Get the total occurrences of crash points >= specified values in the last N games.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of minimum crash point values to count
+        limit: Number of most recent games to analyze (default: 100)
+
+    Returns:
+        Dictionary mapping each value to its occurrence statistics
+    """
+    try:
+        results = {}
+
+        # Get the most recent 'limit' games
+        subquery = session.query(CrashGame.gameId)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .subquery()
+
+        # Get first and last games in the set for reference
+        first_last_games = session.query(
+            func.min(CrashGame.endTime).label('first_time'),
+            func.max(CrashGame.endTime).label('last_time')
+        ).filter(CrashGame.gameId.in_(subquery)).first()
+
+        for value in values:
+            # Count occurrences within these games
+            count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.gameId.in_(subquery))\
+                .filter(CrashGame.crashPoint >= value)\
+                .scalar()
+
+            results[value] = {
+                'count': count,
+                'total_games': limit,
+                'percentage': (count / limit) * 100 if limit > 0 else 0,
+                'first_game_time': first_last_games.first_time,
+                'last_game_time': first_last_games.last_time
+            }
+
+        return results
+
+    except Exception as e:
+        logger.error(
+            f"Error getting min crash point occurrences by games batch: {str(e)}")
+        raise
+
+
+def get_min_crash_point_occurrences_by_time_batch(
+    session: Session,
+    values: List[float],
+    hours: int = 1
+) -> Dict[float, Dict[str, Any]]:
+    """
+    Get the total occurrences of crash points >= specified values in the last N hours.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of minimum crash point values to count
+        hours: Number of hours to look back (default: 1)
+
+    Returns:
+        Dictionary mapping each value to its occurrence statistics
+    """
+    try:
+        results = {}
+
+        # Calculate the time threshold in UTC
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # Get total games in the time period
+        total_games = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .scalar()
+
+        for value in values:
+            # Count occurrences within the time period
+            count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.endTime >= start_time)\
+                .filter(CrashGame.crashPoint >= value)\
+                .scalar()
+
+            results[value] = {
+                'count': count,
+                'total_games': total_games,
+                'percentage': (count / total_games) * 100 if total_games > 0 else 0,
+                'start_time': start_time,
+                'end_time': end_time
+            }
+
+        return results
+
+    except Exception as e:
+        logger.error(
+            f"Error getting min crash point occurrences by time batch: {str(e)}")
+        raise
+
+
+def get_exact_floor_occurrences_by_games_batch(
+    session: Session,
+    values: List[int],
+    limit: int = 100
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Get the total occurrences of exact floor values in the last N games.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of floor values to count
+        limit: Number of most recent games to analyze (default: 100)
+
+    Returns:
+        Dictionary mapping each value to its occurrence statistics
+    """
+    try:
+        results = {}
+
+        # Get the most recent 'limit' games
+        subquery = session.query(CrashGame.gameId)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .subquery()
+
+        # Get first and last games in the set for reference
+        first_last_games = session.query(
+            func.min(CrashGame.endTime).label('first_time'),
+            func.max(CrashGame.endTime).label('last_time')
+        ).filter(CrashGame.gameId.in_(subquery)).first()
+
+        for value in values:
+            # Count occurrences within these games
+            count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.gameId.in_(subquery))\
+                .filter(CrashGame.crashedFloor == value)\
+                .scalar()
+
+            results[value] = {
+                'count': count,
+                'total_games': limit,
+                'percentage': (count / limit) * 100 if limit > 0 else 0,
+                'first_game_time': first_last_games.first_time,
+                'last_game_time': first_last_games.last_time
+            }
+
+        return results
+
+    except Exception as e:
+        logger.error(
+            f"Error getting exact floor occurrences by games batch: {str(e)}")
+        raise
+
+
+def get_exact_floor_occurrences_by_time_batch(
+    session: Session,
+    values: List[int],
+    hours: int = 1
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Get the total occurrences of exact floor values in the last N hours.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of floor values to count
+        hours: Number of hours to look back (default: 1)
+
+    Returns:
+        Dictionary mapping each value to its occurrence statistics
+    """
+    try:
+        results = {}
+
+        # Calculate the time threshold in UTC
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # Get total games in the time period
+        total_games = session.query(func.count(CrashGame.gameId))\
+            .filter(CrashGame.endTime >= start_time)\
+            .scalar()
+
+        for value in values:
+            # Count occurrences within the time period
+            count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.endTime >= start_time)\
+                .filter(CrashGame.crashedFloor == value)\
+                .scalar()
+
+            results[value] = {
+                'count': count,
+                'total_games': total_games,
+                'percentage': (count / total_games) * 100 if total_games > 0 else 0,
+                'start_time': start_time,
+                'end_time': end_time
+            }
+
+        return results
+
+    except Exception as e:
+        logger.error(
+            f"Error getting exact floor occurrences by time batch: {str(e)}")
         raise
