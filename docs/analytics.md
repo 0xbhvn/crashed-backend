@@ -31,6 +31,78 @@ These endpoints will find the most recent game that meets specific crash point c
   - Parameters:
     - `value` (int): Exact floor value to match
 
+- **Batch: Last games with crash points >= X values**
+  - Endpoint: `/api/analytics/last-games/min-crash-points`
+  - Method: POST
+  - Request Body:
+
+    ```json
+    {
+      "values": [float]  // List of minimum crash point values
+    }
+    ```
+
+  - Response:
+
+    ```json
+    {
+      "status": "success",
+      "data": {
+        "2.5": {  // The value being searched for
+          "game": {
+            "gameId": "string",
+            "hashValue": "string",
+            "crashPoint": float,
+            "calculatedPoint": float,
+            "crashedFloor": integer,
+            "endTime": "datetime",
+            "prepareTime": "datetime",
+            "beginTime": "datetime"
+          },
+          "games_since": integer  // Number of games played since this matching game
+        },
+        "3.0": null,  // Example of value with no matching game
+        // ... results for other values ...
+      }
+    }
+    ```
+
+- **Batch: Last games with crash points == X floor values**
+  - Endpoint: `/api/analytics/last-games/exact-floors`
+  - Method: POST
+  - Request Body:
+
+    ```json
+    {
+      "values": [integer]  // List of floor values
+    }
+    ```
+
+  - Response:
+
+    ```json
+    {
+      "status": "success",
+      "data": {
+        "2": {  // The floor value being searched for
+          "game": {
+            "gameId": "string",
+            "hashValue": "string",
+            "crashPoint": float,
+            "calculatedPoint": float,
+            "crashedFloor": integer,
+            "endTime": "datetime",
+            "prepareTime": "datetime",
+            "beginTime": "datetime"
+          },
+          "games_since": integer  // Number of games played since this matching game
+        },
+        "3": null,  // Example of value with no matching game
+        // ... results for other values ...
+      }
+    }
+    ```
+
 #### 2. Crash Point Occurrence Analysis
 
 These endpoints will analyze how frequently specific crash points occur:
