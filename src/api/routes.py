@@ -1041,6 +1041,271 @@ async def get_series_without_min_crash_point_by_time(request: web.Request) -> we
         return error_response("Internal server error", status=500)
 
 
+@routes.get('/api/analytics/intervals/min-crash-point/{value}')
+async def get_min_crash_point_intervals(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash point in time intervals.
+
+    Path parameters:
+        value (float): Minimum crash point threshold
+
+    Query parameters:
+        interval_minutes (int, optional): Size of each interval in minutes (default: 10)
+        hours (int, optional): Total hours to analyze (default: 24)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get query parameters
+        try:
+            interval_minutes = int(request.query.get('interval_minutes', 10))
+            hours = int(request.query.get('hours', 24))
+            if interval_minutes <= 0 or hours <= 0:
+                raise ValueError
+        except ValueError:
+            return error_response("Invalid interval_minutes or hours parameter. Must be positive integers.", status=400)
+
+        # Get timezone from header
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the intervals
+        with db.get_session() as session:
+            intervals = analytics.get_min_crash_point_intervals_by_time(
+                session, value, interval_minutes, hours)
+
+            # Convert datetime objects to timezone-adjusted strings
+            if timezone_name:
+                for interval in intervals:
+                    # Convert datetime objects to strings with timezone adjustment
+                    # The convert_datetime_to_timezone function expects a datetime object
+                    interval['interval_start'] = convert_datetime_to_timezone(
+                        interval['interval_start'], timezone_name)
+                    interval['interval_end'] = convert_datetime_to_timezone(
+                        interval['interval_end'], timezone_name)
+            else:
+                # If no timezone specified, just convert to ISO format strings
+                for interval in intervals:
+                    interval['interval_start'] = interval['interval_start'].isoformat()
+                    interval['interval_end'] = interval['interval_end'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': intervals
+            })
+
+    except Exception as e:
+        logger.error(f"Error in get_min_crash_point_intervals: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/intervals/min-crash-point/{value}/game-sets')
+async def get_min_crash_point_intervals_by_sets(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash point in game set intervals.
+
+    Path parameters:
+        value (float): Minimum crash point threshold
+
+    Query parameters:
+        games_per_set (int, optional): Number of games in each set (default: 10)
+        total_games (int, optional): Total games to analyze (default: 1000)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get query parameters
+        try:
+            games_per_set = int(request.query.get('games_per_set', 10))
+            total_games = int(request.query.get('total_games', 1000))
+            if games_per_set <= 0 or total_games <= 0:
+                raise ValueError
+        except ValueError:
+            return error_response("Invalid games_per_set or total_games parameter. Must be positive integers.", status=400)
+
+        # Get timezone from header
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the intervals
+        with db.get_session() as session:
+            intervals = analytics.get_min_crash_point_intervals_by_game_sets(
+                session, value, games_per_set, total_games)
+
+            # Convert datetime objects to timezone-adjusted strings
+            if timezone_name:
+                for interval in intervals:
+                    # Convert datetime objects to strings with timezone adjustment
+                    interval['start_time'] = convert_datetime_to_timezone(
+                        interval['start_time'], timezone_name)
+                    interval['end_time'] = convert_datetime_to_timezone(
+                        interval['end_time'], timezone_name)
+            else:
+                # If no timezone specified, just convert to ISO format strings
+                for interval in intervals:
+                    interval['start_time'] = interval['start_time'].isoformat()
+                    interval['end_time'] = interval['end_time'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': intervals
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_intervals_by_sets: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/intervals/min-crash-points')
+async def get_min_crash_point_intervals_batch(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash points in time intervals.
+
+    Request Body:
+        values (List[float]): List of minimum crash point thresholds
+        interval_minutes (int, optional): Size of each interval in minutes (default: 10)
+        hours (int, optional): Total hours to analyze (default: 24)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list) or not values:
+                return error_response("Invalid or missing 'values' in request body", status=400)
+            values = [float(v) for v in values]
+
+            interval_minutes = int(body.get('interval_minutes', 10))
+            hours = int(body.get('hours', 24))
+            if interval_minutes <= 0 or hours <= 0:
+                raise ValueError
+        except (ValueError, json.JSONDecodeError):
+            return error_response("Invalid request body parameters", status=400)
+
+        # Get timezone from header
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the intervals
+        with db.get_session() as session:
+            results = analytics.get_min_crash_point_intervals_by_time_batch(
+                session, values, interval_minutes, hours)
+
+            # Convert datetime objects to strings
+            if timezone_name:
+                for value_intervals in results.values():
+                    for interval in value_intervals:
+                        interval['interval_start'] = convert_datetime_to_timezone(
+                            interval['interval_start'], timezone_name)
+                        interval['interval_end'] = convert_datetime_to_timezone(
+                            interval['interval_end'], timezone_name)
+            else:
+                # If no timezone specified, just convert to ISO format strings
+                for value_intervals in results.values():
+                    for interval in value_intervals:
+                        interval['interval_start'] = interval['interval_start'].isoformat()
+                        interval['interval_end'] = interval['interval_end'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': results
+            })
+
+    except Exception as e:
+        logger.error(f"Error in get_min_crash_point_intervals_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.post('/api/analytics/intervals/min-crash-points/game-sets')
+async def get_min_crash_point_intervals_by_sets_batch(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash points in game set intervals.
+
+    Request Body:
+        values (List[float]): List of minimum crash point thresholds
+        games_per_set (int, optional): Number of games in each set (default: 10)
+        total_games (int, optional): Total games to analyze (default: 1000)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get request body
+        try:
+            body = await request.json()
+            values = body.get('values', [])
+            if not isinstance(values, list) or not values:
+                return error_response("Invalid or missing 'values' in request body", status=400)
+            values = [float(v) for v in values]
+
+            games_per_set = int(body.get('games_per_set', 10))
+            total_games = int(body.get('total_games', 1000))
+            if games_per_set <= 0 or total_games <= 0:
+                raise ValueError
+        except (ValueError, json.JSONDecodeError):
+            return error_response("Invalid request body parameters", status=400)
+
+        # Get timezone from header
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the intervals
+        with db.get_session() as session:
+            results = analytics.get_min_crash_point_intervals_by_game_sets_batch(
+                session, values, games_per_set, total_games)
+
+            # Convert datetime objects to strings
+            if timezone_name:
+                for value_intervals in results.values():
+                    for interval in value_intervals:
+                        interval['start_time'] = convert_datetime_to_timezone(
+                            interval['start_time'], timezone_name)
+                        interval['end_time'] = convert_datetime_to_timezone(
+                            interval['end_time'], timezone_name)
+            else:
+                # If no timezone specified, just convert to ISO format strings
+                for value_intervals in results.values():
+                    for interval in value_intervals:
+                        interval['start_time'] = interval['start_time'].isoformat()
+                        interval['end_time'] = interval['end_time'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': results
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_min_crash_point_intervals_by_sets_batch: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
 def setup_api_routes(app: web.Application) -> None:
     """
     Set up API routes for the application.

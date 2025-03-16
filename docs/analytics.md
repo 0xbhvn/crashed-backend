@@ -268,7 +268,7 @@ Error Responses:
 - 400: Invalid parameters
 - 500: Internal server error
 
-#### 4. Interval Analysis [Pending]
+#### 4. Interval Analysis [Done]
 
 These endpoints will analyze crash points in specific intervals:
 

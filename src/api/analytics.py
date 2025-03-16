@@ -743,3 +743,205 @@ def get_series_without_min_crash_point_by_time(
         logger.error(
             f"Error analyzing series without min crash point by time: {str(e)}")
         raise
+
+
+def get_min_crash_point_intervals_by_time(
+    session: Session,
+    min_value: float,
+    interval_minutes: int = 10,
+    hours: int = 24
+) -> List[Dict[str, Any]]:
+    """
+    Analyze crash points >= specified value in fixed time intervals.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point threshold
+        interval_minutes: Size of each interval in minutes (default: 10)
+        hours: Total hours to analyze (default: 24)
+
+    Returns:
+        List of dictionaries, each containing statistics for a time interval
+    """
+    try:
+        # Calculate the end time in UTC
+        end_time = datetime.now(timezone.utc)
+
+        # Round the end time down to the nearest interval boundary
+        minutes = end_time.minute
+        floored_minutes = (minutes // interval_minutes) * interval_minutes
+
+        # Create a clean end time at the interval boundary
+        clean_end_time = end_time.replace(
+            minute=floored_minutes,
+            second=0,
+            microsecond=0
+        )
+
+        # If we're past the latest interval boundary, include this partial interval
+        # for analysis but keep the boundary clean
+        analysis_end_time = end_time
+
+        # Calculate the start time by going back the requested number of hours
+        # from the clean end time (keeping it on interval boundaries)
+        start_time = clean_end_time - timedelta(hours=hours)
+
+        interval_delta = timedelta(minutes=interval_minutes)
+
+        # Get all games in the time period
+        games = session.query(CrashGame)\
+            .filter(CrashGame.endTime >= start_time)\
+            .order_by(CrashGame.endTime)\
+            .all()
+
+        intervals = []
+        current_interval_start = start_time
+
+        while current_interval_start < analysis_end_time:
+            current_interval_end = min(
+                current_interval_start + interval_delta, analysis_end_time)
+
+            # Count games in this interval
+            interval_games = [
+                g for g in games if current_interval_start <= g.endTime < current_interval_end]
+            total_games = len(interval_games)
+
+            # Count games with crash point >= min_value
+            matching_games = len(
+                [g for g in interval_games if g.crashPoint >= min_value])
+
+            # Only include intervals that have games
+            if total_games > 0:
+                intervals.append({
+                    'interval_start': current_interval_start,
+                    'interval_end': current_interval_end,
+                    'count': matching_games,
+                    'total_games': total_games,
+                    'percentage': (matching_games / total_games) * 100 if total_games > 0 else 0
+                })
+
+            current_interval_start = current_interval_end
+
+        return intervals
+
+    except Exception as e:
+        logger.error(f"Error analyzing intervals by time: {str(e)}")
+        raise
+
+
+def get_min_crash_point_intervals_by_game_sets(
+    session: Session,
+    min_value: float,
+    games_per_set: int = 10,
+    total_games: int = 1000
+) -> List[Dict[str, Any]]:
+    """
+    Analyze crash points >= specified value in fixed-size game sets.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point threshold
+        games_per_set: Number of games in each set (default: 10)
+        total_games: Total games to analyze (default: 1000)
+
+    Returns:
+        List of dictionaries, each containing statistics for a game set
+    """
+    try:
+        # Get the most recent games
+        games = session.query(CrashGame)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(total_games)\
+            .all()
+
+        # Reverse to process from oldest to newest
+        games.reverse()
+
+        intervals = []
+        total_sets = (len(games) + games_per_set - 1) // games_per_set
+
+        for set_number in range(total_sets):
+            start_idx = set_number * games_per_set
+            end_idx = min(start_idx + games_per_set, len(games))
+            current_set = games[start_idx:end_idx]
+
+            # Count games with crash point >= min_value
+            matching_games = len(
+                [g for g in current_set if g.crashPoint >= min_value])
+
+            intervals.append({
+                'set_number': set_number + 1,  # 1-based set numbering
+                'start_game': current_set[0].gameId,
+                'end_game': current_set[-1].gameId,
+                'count': matching_games,
+                'total_games': len(current_set),
+                'percentage': (matching_games / len(current_set)) * 100,
+                'start_time': current_set[0].endTime,
+                'end_time': current_set[-1].endTime
+            })
+
+        return intervals
+
+    except Exception as e:
+        logger.error(f"Error analyzing intervals by game sets: {str(e)}")
+        raise
+
+
+def get_min_crash_point_intervals_by_time_batch(
+    session: Session,
+    values: List[float],
+    interval_minutes: int = 10,
+    hours: int = 24
+) -> Dict[float, List[Dict[str, Any]]]:
+    """
+    Analyze crash points >= specified values in fixed time intervals.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of minimum crash point thresholds
+        interval_minutes: Size of each interval in minutes (default: 10)
+        hours: Total hours to analyze (default: 24)
+
+    Returns:
+        Dictionary mapping each value to its interval analysis results
+    """
+    try:
+        results = {}
+        for value in values:
+            results[value] = get_min_crash_point_intervals_by_time(
+                session, value, interval_minutes, hours)
+        return results
+
+    except Exception as e:
+        logger.error(f"Error analyzing intervals by time batch: {str(e)}")
+        raise
+
+
+def get_min_crash_point_intervals_by_game_sets_batch(
+    session: Session,
+    values: List[float],
+    games_per_set: int = 10,
+    total_games: int = 1000
+) -> Dict[float, List[Dict[str, Any]]]:
+    """
+    Analyze crash points >= specified values in fixed-size game sets.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of minimum crash point thresholds
+        games_per_set: Number of games in each set (default: 10)
+        total_games: Total games to analyze (default: 1000)
+
+    Returns:
+        Dictionary mapping each value to its interval analysis results
+    """
+    try:
+        results = {}
+        for value in values:
+            results[value] = get_min_crash_point_intervals_by_game_sets(
+                session, value, games_per_set, total_games)
+        return results
+
+    except Exception as e:
+        logger.error(f"Error analyzing intervals by game sets batch: {str(e)}")
+        raise
