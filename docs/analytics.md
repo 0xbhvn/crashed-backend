@@ -226,17 +226,136 @@ These endpoints will analyze crash points in specific intervals:
 
 - **Occurrences of >= X crash point in time intervals**
   - Endpoint: `/api/analytics/intervals/min-crash-point/{value}`
+  - Method: GET
   - Parameters:
     - `value` (float): Minimum crash point threshold
     - `interval_minutes` (int, optional): Size of each interval in minutes (default: 10)
     - `hours` (int, optional): Total hours to analyze (default: 24)
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
 
 - **Occurrences of >= X crash point in game set intervals**
   - Endpoint: `/api/analytics/intervals/min-crash-point/{value}/game-sets`
+  - Method: GET
   - Parameters:
     - `value` (float): Minimum crash point threshold
     - `games_per_set` (int, optional): Number of games in each set (default: 10)
     - `total_games` (int, optional): Total games to analyze (default: 1000)
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+- **Batch: Occurrences of >= X crash points in time intervals**
+  - Endpoint: `/api/analytics/intervals/min-crash-points`
+  - Method: POST
+  - Request Body:
+    - `values` (List[float]): List of minimum crash point thresholds
+    - `interval_minutes` (int, optional): Size of each interval in minutes (default: 10)
+    - `hours` (int, optional): Total hours to analyze (default: 24)
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+- **Batch: Occurrences of >= X crash points in game set intervals**
+  - Endpoint: `/api/analytics/intervals/min-crash-points/game-sets`
+  - Method: POST
+  - Request Body:
+    - `values` (List[float]): List of minimum crash point thresholds
+    - `games_per_set` (int, optional): Number of games in each set (default: 10)
+    - `total_games` (int, optional): Total games to analyze (default: 1000)
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+Time-based interval endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "interval_start": "datetime",
+            "interval_end": "datetime",
+            "count": integer,
+            "total_games": integer,
+            "percentage": float
+        },
+        // More intervals...
+    ]
+}
+```
+
+Game-set interval endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "set_number": integer,
+            "start_game": "string",
+            "end_game": "string",
+            "count": integer,
+            "total_games": integer,
+            "percentage": float,
+            "start_time": "datetime",
+            "end_time": "datetime"
+        },
+        // More sets...
+    ]
+}
+```
+
+Batch time-based interval endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "2.0": [
+            {
+                "interval_start": "datetime",
+                "interval_end": "datetime",
+                "count": integer,
+                "total_games": integer,
+                "percentage": float
+            },
+            // More intervals...
+        ],
+        "3.0": [
+            // Intervals for 3.0...
+        ]
+    }
+}
+```
+
+Batch game-set interval endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "2.0": [
+            {
+                "set_number": integer,
+                "start_game": "string",
+                "end_game": "string",
+                "count": integer,
+                "total_games": integer, 
+                "percentage": float,
+                "start_time": "datetime",
+                "end_time": "datetime"
+            },
+            // More sets...
+        ],
+        "3.0": [
+            // Sets for 3.0...
+        ]
+    }
+}
+```
+
+Error Responses:
+
+- 400: Invalid parameters or request body
+- 500: Internal server error
 
 #### 4. Non-occurrence Series Analysis [Pending]
 
