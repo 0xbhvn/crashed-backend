@@ -1,6 +1,6 @@
-# Railway Database Migration Guide
+# Railway Migration Commands
 
-This guide explains how to manually run database migrations on Railway for the BC Game Crash Monitor application.
+This guide explains how to manually run database migrations on Railway for the Crash Monitor application.
 
 ## Option 1: Using Railway Web Interface
 

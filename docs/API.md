@@ -1,16 +1,14 @@
-# BC Game Crash Monitor API
+# Crash Monitor API
 
-This document describes the API endpoints provided by the BC Game Crash Monitor.
+This document describes the API endpoints provided by the Crash Monitor.
 
-## Getting Started
-
-To start the application with only the API server (no polling), run:
+## Running the API Server Only
 
 ```bash
-python -m src.app monitor --skip-polling
+python -m src.main api --skip-polling
 ```
 
-This will start the API server without activating the polling mechanism that fetches data from BC Game. This is useful for local development and testing when you don't want to duplicate polling from your production instance.
+This will start the API server without activating the polling mechanism that fetches data from the game service. This is useful for local development and testing when you don't want to duplicate polling from your production instance.
 
 ## API Endpoints
 
@@ -154,7 +152,7 @@ The API server runs on port 3000 by default. You can change this by setting the 
 
 ```bash
 export API_PORT=8000
-python -m src.app monitor --skip-polling
+python -m src.main api --skip-polling
 ```
 
 ### Timezone Configuration
@@ -171,7 +169,7 @@ You can configure the default timezone for datetime values in API responses usin
 
    ```bash
    export TIMEZONE=America/New_York
-   python -m src.app monitor --skip-polling
+   python -m src.main api --skip-polling
    ```
 
 Common timezone values:

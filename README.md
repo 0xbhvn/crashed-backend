@@ -1,10 +1,10 @@
-# BC Game Crash Monitor
+# Crash Monitor
 
-A Python application for monitoring BC Game's crash game, calculating crash values, and storing results in a database.
+A Python application for monitoring crash game values, calculating crash points, and storing results in a database.
 
 ## Features
 
-- Real-time monitoring of BC Game crash results
+- Real-time monitoring of crash results
 - Historical data catchup functionality
 - Crash point calculation and verification
 - Database storage of game results
@@ -68,7 +68,7 @@ The application can be configured using environment variables:
 
 ### API Settings
 
-- `API_BASE_URL`: Base URL for the BC Game API (default: '<https://bc.game>')
+- `API_BASE_URL`: Base URL for the game API (default: '[https://example.com](https://example.com)')
 - `API_HISTORY_ENDPOINT`: API endpoint for crash history (default: '/api/crash/games/history')
 - `GAME_URL`: Game URL path (default: '/game/crash')
 - `PAGE_SIZE`: Number of games per page in API requests (default: 50)
@@ -129,7 +129,7 @@ python -m src catchup --pages 50 --batch-size 10
 
 - `monitor`: Run the crash monitor (default command)
   - `--skip-catchup`: Skip the initial catchup process
-  - `--skip-polling`: Run only the API server without polling BC Game
+  - `--skip-polling`: Run only the API server without polling the game service
 
 - `catchup`: Run only the historical data catchup
   - `--pages`: Number of pages to fetch (default: from config)

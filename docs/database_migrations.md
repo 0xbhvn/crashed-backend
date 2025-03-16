@@ -1,6 +1,6 @@
-# Database Schema Migration Guide
+# Database Migrations
 
-This guide explains how to manage database schema changes in the BC Game Crash Monitor application.
+This guide explains how to manage database schema changes in the Crash Monitor application.
 
 ## Current Database Schema Management
 

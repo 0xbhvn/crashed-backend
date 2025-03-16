@@ -1,6 +1,6 @@
 # Railway Deployment Guide
 
-This guide explains how to deploy the BC Game Crash Monitor application to Railway with a PostgreSQL database.
+This guide explains how to deploy the Crash Monitor application to Railway with a PostgreSQL database.
 
 ## Prerequisites
 
