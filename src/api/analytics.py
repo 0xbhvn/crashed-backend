@@ -778,9 +778,13 @@ def get_min_crash_point_intervals_by_time(
             microsecond=0
         )
 
-        # If we're past the latest interval boundary, include this partial interval
-        # for analysis but keep the boundary clean
+        # The actual end time for analysis (used for filtering games)
         analysis_end_time = end_time
+
+        # Calculate the clean interval end time for the last interval
+        # This is the next interval boundary after clean_end_time
+        last_interval_end = clean_end_time + \
+            timedelta(minutes=interval_minutes)
 
         # Calculate the start time by going back the requested number of hours
         # from the clean end time (keeping it on interval boundaries)
@@ -791,19 +795,21 @@ def get_min_crash_point_intervals_by_time(
         # Get all games in the time period
         games = session.query(CrashGame)\
             .filter(CrashGame.endTime >= start_time)\
+            .filter(CrashGame.endTime <= analysis_end_time)\
             .order_by(CrashGame.endTime)\
             .all()
 
         intervals = []
         current_interval_start = start_time
 
-        while current_interval_start < analysis_end_time:
-            current_interval_end = min(
-                current_interval_start + interval_delta, analysis_end_time)
+        # Process all intervals with standard boundaries
+        while current_interval_start < last_interval_end:
+            # Always use standard interval boundaries for all intervals
+            current_interval_end = current_interval_start + interval_delta
 
             # Count games in this interval
             interval_games = [
-                g for g in games if current_interval_start <= g.endTime < current_interval_end]
+                g for g in games if current_interval_start <= g.endTime < min(current_interval_end, analysis_end_time)]
             total_games = len(interval_games)
 
             # Count games with crash point >= min_value
