@@ -220,7 +220,55 @@ Error Responses:
 - 400: Invalid parameters or request body
 - 500: Internal server error
 
-#### 3. Interval Analysis [Pending]
+#### 3. Non-occurrence Series Analysis [Done]
+
+- **Series of games without >= X crash point**
+  - By game count:
+    - Endpoint: `/api/analytics/series/without-min-crash-point/{value}`
+    - Method: GET
+    - Parameters:
+      - `value` (float): Minimum crash point threshold
+      - `limit` (int, optional): Number of games to analyze (default: 1000)
+      - `sort_by` (string, optional): How to sort results - 'time' (default) or 'length'
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+  
+  - By time duration:
+    - Endpoint: `/api/analytics/series/without-min-crash-point/{value}/time`
+    - Method: GET
+    - Parameters:
+      - `value` (float): Minimum crash point threshold
+      - `hours` (int, optional): Hours to look back (default: 24)
+      - `sort_by` (string, optional): How to sort results - 'time' (default) or 'length'
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+Both endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "start_game_id": "string",
+            "start_time": "datetime",
+            "end_game_id": "string",
+            "end_time": "datetime",
+            "length": integer
+        },
+        // More series (if any)...
+    ]
+}
+```
+
+By default, the results are sorted by time (most recent first). If `sort_by=length` is specified, the results will be sorted by series length (longest first). Each series represents a consecutive set of games where the crash point was below the specified threshold value.
+
+Error Responses:
+
+- 400: Invalid parameters
+- 500: Internal server error
+
+#### 4. Interval Analysis [Pending]
 
 These endpoints will analyze crash points in specific intervals:
 
@@ -355,54 +403,6 @@ Batch game-set interval endpoints return:
 Error Responses:
 
 - 400: Invalid parameters or request body
-- 500: Internal server error
-
-#### 4. Non-occurrence Series Analysis [Done]
-
-- **Series of games without >= X crash point**
-  - By game count:
-    - Endpoint: `/api/analytics/series/without-min-crash-point/{value}`
-    - Method: GET
-    - Parameters:
-      - `value` (float): Minimum crash point threshold
-      - `limit` (int, optional): Number of games to analyze (default: 1000)
-      - `sort_by` (string, optional): How to sort results - 'time' (default) or 'length'
-    - Headers:
-      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-  
-  - By time duration:
-    - Endpoint: `/api/analytics/series/without-min-crash-point/{value}/time`
-    - Method: GET
-    - Parameters:
-      - `value` (float): Minimum crash point threshold
-      - `hours` (int, optional): Hours to look back (default: 24)
-      - `sort_by` (string, optional): How to sort results - 'time' (default) or 'length'
-    - Headers:
-      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-Both endpoints return:
-
-```json
-{
-    "status": "success",
-    "data": [
-        {
-            "start_game_id": "string",
-            "start_time": "datetime",
-            "end_game_id": "string",
-            "end_time": "datetime",
-            "length": integer
-        },
-        // More series (if any)...
-    ]
-}
-```
-
-By default, the results are sorted by time (most recent first). If `sort_by=length` is specified, the results will be sorted by series length (longest first). Each series represents a consecutive set of games where the crash point was below the specified threshold value.
-
-Error Responses:
-
-- 400: Invalid parameters
 - 500: Internal server error
 
 ### Additional Analytics
