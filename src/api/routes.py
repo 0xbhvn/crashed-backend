@@ -898,6 +898,149 @@ async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web
         return error_response("Internal server error", status=500)
 
 
+@routes.get('/api/analytics/series/without-min-crash-point/{value}')
+async def get_series_without_min_crash_point(request: web.Request) -> web.Response:
+    """
+    Get series of games without crash points >= specified value in the last N games.
+
+    Path parameters:
+        value (float): Minimum crash point threshold
+
+    Query parameters:
+        limit (int, optional): Number of games to analyze (default: 1000)
+        sort_by (string, optional): How to sort results - 'time' (default) or 'length'
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get query parameters
+        try:
+            limit = int(request.query.get('limit', '1000'))
+            if limit < 1:
+                return error_response("Limit must be greater than 0.", status=400)
+
+            sort_by = request.query.get('sort_by', 'time')
+            if sort_by not in ['time', 'length']:
+                return error_response("sort_by must be either 'time' or 'length'.", status=400)
+        except ValueError:
+            return error_response("Invalid query parameters.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the series
+        with db.get_session() as session:
+            result = analytics.get_series_without_min_crash_point_by_games(
+                session=session,
+                min_value=value,
+                limit=limit,
+                sort_by=sort_by
+            )
+
+            # Convert datetime values to specified timezone if provided, or to ISO format
+            for series in result:
+                if timezone_name:
+                    series['start_time'] = convert_datetime_to_timezone(
+                        series['start_time'], timezone_name)
+                    series['end_time'] = convert_datetime_to_timezone(
+                        series['end_time'], timezone_name)
+                else:
+                    # If no timezone provided, just convert to ISO format string
+                    series['start_time'] = series['start_time'].isoformat()
+                    series['end_time'] = series['end_time'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(f"Error in get_series_without_min_crash_point: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/series/without-min-crash-point/{value}/time')
+async def get_series_without_min_crash_point_by_time(request: web.Request) -> web.Response:
+    """
+    Get series of games without crash points >= specified value in the last N hours.
+
+    Path parameters:
+        value (float): Minimum crash point threshold
+
+    Query parameters:
+        hours (int, optional): Hours to look back (default: 24)
+        sort_by (string, optional): How to sort results - 'time' (default) or 'length'
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'Asia/Kolkata')
+    """
+    try:
+        # Get value from path parameter
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get query parameters
+        try:
+            hours = int(request.query.get('hours', '24'))
+            if hours < 1:
+                return error_response("Hours must be greater than 0.", status=400)
+
+            sort_by = request.query.get('sort_by', 'time')
+            if sort_by not in ['time', 'length']:
+                return error_response("sort_by must be either 'time' or 'length'.", status=400)
+        except ValueError:
+            return error_response("Invalid query parameters.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the series
+        with db.get_session() as session:
+            result = analytics.get_series_without_min_crash_point_by_time(
+                session=session,
+                min_value=value,
+                hours=hours,
+                sort_by=sort_by
+            )
+
+            # Convert datetime values to specified timezone if provided, or to ISO format
+            for series in result:
+                if timezone_name:
+                    series['start_time'] = convert_datetime_to_timezone(
+                        series['start_time'], timezone_name)
+                    series['end_time'] = convert_datetime_to_timezone(
+                        series['end_time'], timezone_name)
+                else:
+                    # If no timezone provided, just convert to ISO format string
+                    series['start_time'] = series['start_time'].isoformat()
+                    series['end_time'] = series['end_time'].isoformat()
+
+            return json_response({
+                'status': 'success',
+                'data': result
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_series_without_min_crash_point_by_time: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
 def setup_api_routes(app: web.Application) -> None:
     """
     Set up API routes for the application.

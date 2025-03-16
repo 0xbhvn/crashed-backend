@@ -592,3 +592,154 @@ def get_exact_floor_occurrences_by_time_batch(
         logger.error(
             f"Error getting exact floor occurrences by time batch: {str(e)}")
         raise
+
+
+def get_series_without_min_crash_point_by_games(
+    session: Session,
+    min_value: float,
+    limit: int = 1000,
+    sort_by: str = 'time'  # Options: 'time', 'length'
+) -> List[Dict[str, Any]]:
+    """
+    Get series of games without crash points >= specified value in the last N games.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point threshold
+        limit: Number of most recent games to analyze (default: 1000)
+        sort_by: How to sort results - 'time' (chronological) or 'length' (longest first)
+
+    Returns:
+        List of dictionaries, each containing information about a series of games
+        without crash points >= min_value
+    """
+    try:
+        # Get the most recent 'limit' games
+        games = session.query(CrashGame)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .all()
+
+        # Reverse the list to process from oldest to newest
+        games.reverse()
+
+        series_list = []
+        current_series = None
+
+        for i, game in enumerate(games):
+            # If game has crash point < min_value, it's part of a series
+            if game.crashPoint < min_value:
+                # Start a new series if needed
+                if current_series is None:
+                    current_series = {
+                        'start_game_id': game.gameId,
+                        'start_time': game.endTime,
+                        'end_game_id': game.gameId,
+                        'end_time': game.endTime,
+                        'length': 1
+                    }
+                else:
+                    # Extend the current series
+                    current_series['end_game_id'] = game.gameId
+                    current_series['end_time'] = game.endTime
+                    current_series['length'] += 1
+            else:
+                # If we had a series going, save it
+                if current_series is not None:
+                    series_list.append(current_series)
+                    current_series = None
+
+        # Add the last series if it exists
+        if current_series is not None:
+            series_list.append(current_series)
+
+        # Sort the series list based on the specified criterion
+        if sort_by.lower() == 'length':
+            # Sort by length (longest first)
+            series_list.sort(key=lambda x: x['length'], reverse=True)
+        else:
+            # Default: Sort by time (most recent first)
+            series_list.sort(key=lambda x: x['end_time'], reverse=True)
+
+        return series_list
+
+    except Exception as e:
+        logger.error(
+            f"Error analyzing series without min crash point by games: {str(e)}")
+        raise
+
+
+def get_series_without_min_crash_point_by_time(
+    session: Session,
+    min_value: float,
+    hours: int = 24,
+    sort_by: str = 'time'  # Options: 'time', 'length'
+) -> List[Dict[str, Any]]:
+    """
+    Get series of games without crash points >= specified value in the last N hours.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point threshold
+        hours: Total hours to analyze (default: 24)
+        sort_by: How to sort results - 'time' (chronological) or 'length' (longest first)
+
+    Returns:
+        List of dictionaries, each containing information about a series of games
+        without crash points >= min_value
+    """
+    try:
+        # Calculate the time threshold in UTC
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(hours=hours)
+
+        # Get games in the time period ordered by time
+        games = session.query(CrashGame)\
+            .filter(CrashGame.endTime >= start_time)\
+            .order_by(CrashGame.endTime)\
+            .all()
+
+        series_list = []
+        current_series = None
+
+        for i, game in enumerate(games):
+            # If game has crash point < min_value, it's part of a series
+            if game.crashPoint < min_value:
+                # Start a new series if needed
+                if current_series is None:
+                    current_series = {
+                        'start_game_id': game.gameId,
+                        'start_time': game.endTime,
+                        'end_game_id': game.gameId,
+                        'end_time': game.endTime,
+                        'length': 1
+                    }
+                else:
+                    # Extend the current series
+                    current_series['end_game_id'] = game.gameId
+                    current_series['end_time'] = game.endTime
+                    current_series['length'] += 1
+            else:
+                # If we had a series going, save it
+                if current_series is not None:
+                    series_list.append(current_series)
+                    current_series = None
+
+        # Add the last series if it exists
+        if current_series is not None:
+            series_list.append(current_series)
+
+        # Sort the series list based on the specified criterion
+        if sort_by.lower() == 'length':
+            # Sort by length (longest first)
+            series_list.sort(key=lambda x: x['length'], reverse=True)
+        else:
+            # Default: Sort by time (most recent first)
+            series_list.sort(key=lambda x: x['end_time'], reverse=True)
+
+        return series_list
+
+    except Exception as e:
+        logger.error(
+            f"Error analyzing series without min crash point by time: {str(e)}")
+        raise
