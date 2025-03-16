@@ -25,34 +25,9 @@ These endpoints will find the most recent game that meets specific crash point c
   - Endpoint: `/api/analytics/last-game/min-crash-point/{value}`
   - Method: GET
   - Parameters:
-    - `value` (float): Minimum crash point value
+    - `value` (float): Minimum crash point to count
   - Headers:
     - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-  - Response:
-
-    ```json
-    {
-      "status": "success",
-      "data": {
-        "game": {
-          "gameId": "string",
-          "hashValue": "string",
-          "crashPoint": float,
-          "calculatedPoint": float,
-          "crashedFloor": integer,
-          "endTime": "datetime",
-          "prepareTime": "datetime",
-          "beginTime": "datetime"
-        },
-        "games_since": integer  // Number of games played since this matching game
-      }
-    }
-    ```
-
-  - Error Responses:
-    - 400: Invalid value parameter
-    - 404: No matching games found
-    - 500: Internal server error
 
 - **Last game with crash points == X floor value**
   - Endpoint: `/api/analytics/last-game/exact-floor/{value}`
@@ -61,87 +36,30 @@ These endpoints will find the most recent game that meets specific crash point c
     - `value` (int): Exact floor value to match
   - Headers:
     - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-  - Response:
-
-    ```json
-    {
-      "status": "success",
-      "data": {
-        "game": {
-          "gameId": "string",
-          "hashValue": "string",
-          "crashPoint": float,
-          "calculatedPoint": float,
-          "crashedFloor": integer,
-          "endTime": "datetime",
-          "prepareTime": "datetime",
-          "beginTime": "datetime"
-        },
-        "games_since": integer  // Number of games played since this matching game
-      }
-    }
-    ```
-
-  - Error Responses:
-    - 400: Invalid value parameter (must be integer)
-    - 404: No matching games found
-    - 500: Internal server error
 
 - **Batch: Last games with crash points >= X values**
   - Endpoint: `/api/analytics/last-games/min-crash-points`
   - Method: POST
   - Request Body:
-
-    ```json
-    {
-      "values": [float]  // List of minimum crash point values
-    }
-    ```
-
-  - Response:
-
-    ```json
-    {
-      "status": "success",
-      "data": {
-        "2.5": {  // The value being searched for
-          "game": {
-            "gameId": "string",
-            "hashValue": "string",
-            "crashPoint": float,
-            "calculatedPoint": float,
-            "crashedFloor": integer,
-            "endTime": "datetime",
-            "prepareTime": "datetime",
-            "beginTime": "datetime"
-          },
-          "games_since": integer  // Number of games played since this matching game
-        },
-        "3.0": null,  // Example of value with no matching game
-        // ... results for other values ...
-      }
-    }
-    ```
+    - `values` (List[float]): List of minimum crash point values
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
 
 - **Batch: Last games with crash points == X floor values**
   - Endpoint: `/api/analytics/last-games/exact-floors`
   - Method: POST
   - Request Body:
+    - `values` (List[int]): List of floor values
+  - Headers:
+    - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
 
-    ```json
-    {
-      "values": [integer]  // List of floor values
-    }
-    ```
+Single value endpoints return:
 
-  - Response:
-
-    ```json
-    {
-      "status": "success",
-      "data": {
-        "2": {  // The floor value being searched for
-          "game": {
+```json
+{
+    "status": "success",
+    "data": {
+        "game": {
             "gameId": "string",
             "hashValue": "string",
             "crashPoint": float,
@@ -150,14 +68,41 @@ These endpoints will find the most recent game that meets specific crash point c
             "endTime": "datetime",
             "prepareTime": "datetime",
             "beginTime": "datetime"
-          },
-          "games_since": integer  // Number of games played since this matching game
         },
-        "3": null,  // Example of value with no matching game
-        // ... results for other values ...
-      }
+        "games_since": integer
     }
-    ```
+}
+```
+
+Batch endpoints return:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "2.5": {
+            "game": {
+                "gameId": "string",
+                "hashValue": "string",
+                "crashPoint": float,
+                "calculatedPoint": float,
+                "crashedFloor": integer,
+                "endTime": "datetime",
+                "prepareTime": "datetime",
+                "beginTime": "datetime"
+            },
+            "games_since": integer
+        },
+        "3.0": null
+    }
+}
+```
+
+Error Responses:
+
+- 400: Invalid parameters or request body
+- 404: No matching games found
+- 500: Internal server error
 
 #### 2. Crash Point Occurrence Analysis [Done]
 
@@ -169,25 +114,111 @@ These endpoints will analyze how frequently specific crash points occur:
     - Parameters:
       - `value` (float): Minimum crash point to count
       - `limit` (int, optional): Number of games to analyze (default: 100)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
   
   - By time duration:
     - Endpoint: `/api/analytics/occurrences/min-crash-point/{value}/time`
     - Parameters:
       - `value` (float): Minimum crash point to count
       - `hours` (int, optional): Hours to look back (default: 1)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
 
-- **Total occurrences of == X floor crash point**
+- **Total occurrences of exact floor value**
   - By game count:
     - Endpoint: `/api/analytics/occurrences/exact-floor/{value}`
     - Parameters:
       - `value` (int): Exact floor value to count
       - `limit` (int, optional): Number of games to analyze (default: 100)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
   
   - By time duration:
     - Endpoint: `/api/analytics/occurrences/exact-floor/{value}/time`
     - Parameters:
       - `value` (int): Exact floor value to count
       - `hours` (int, optional): Hours to look back (default: 1)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+- **Batch: Total occurrences of >= X crash points**
+  - By game count:
+    - Endpoint: `/api/analytics/occurrences/min-crash-points`
+    - Request Body:
+      - `values` (List[float]): List of minimum crash points to count
+      - `limit` (int, optional): Number of games to analyze (default: 100)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+  
+  - By time duration:
+    - Endpoint: `/api/analytics/occurrences/min-crash-points/time`
+    - Request Body:
+      - `values` (List[float]): List of minimum crash points to count
+      - `hours` (int, optional): Hours to look back (default: 1)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+- **Batch: Total occurrences of exact floor values**
+  - By game count:
+    - Endpoint: `/api/analytics/occurrences/exact-floors`
+    - Request Body:
+      - `values` (List[int]): List of floor values to count
+      - `limit` (int, optional): Number of games to analyze (default: 100)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+  
+  - By time duration:
+    - Endpoint: `/api/analytics/occurrences/exact-floors/time`
+    - Request Body:
+      - `values` (List[int]): List of floor values to count
+      - `hours` (int, optional): Hours to look back (default: 1)
+    - Headers:
+      - `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
+
+Each endpoint returns:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "count": 15,
+        "total_games": 100,
+        "percentage": 15.0,
+        "first_game_time/start_time": "2024-03-20T10:00:00+05:30",
+        "last_game_time/end_time": "2024-03-20T11:00:00+05:30"
+    }
+}
+```
+
+For batch endpoints, the response data will be a map of values to their respective statistics:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "2.0": {
+            "count": 25,
+            "total_games": 100,
+            "percentage": 25.0,
+            "first_game_time/start_time": "2024-03-20T10:00:00+05:30",
+            "last_game_time/end_time": "2024-03-20T11:00:00+05:30"
+        },
+        "3.0": {
+            "count": 15,
+            "total_games": 100,
+            "percentage": 15.0,
+            "first_game_time/start_time": "2024-03-20T10:00:00+05:30",
+            "last_game_time/end_time": "2024-03-20T11:00:00+05:30"
+        }
+    }
+}
+```
+
+Error Responses:
+
+- 400: Invalid parameters or request body
+- 500: Internal server error
 
 #### 3. Interval Analysis [Pending]
 
@@ -305,348 +336,3 @@ This approach balances simplicity, performance, and flexibility while avoiding t
 3. Add tests to ensure accuracy of calculations
 4. Add documentation for each endpoint
 5. Monitor performance and optimize as needed
-
-## Analytics API Documentation
-
-### Crash Point Occurrence Analysis
-
-#### Get Occurrences of Crash Points >= Value (By Games)
-
-**HTTP Method**: GET  
-**Endpoint**: `/api/analytics/occurrences/min-crash-point/{value}`
-
-Retrieves the total occurrences of crash points greater than or equal to a specified value in the last N games.
-
-**Path Parameters**:
-
-- `value` (float): Minimum crash point value to analyze
-
-**Query Parameters**:
-
-- `limit` (int, optional): Number of games to analyze (default: 100)
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "count": 15,
-        "total_games": 100,
-        "percentage": 15.0,
-        "first_game_time": "2024-03-20T10:00:00+05:30",
-        "last_game_time": "2024-03-20T11:00:00+05:30"
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid parameters
-- 500: Internal server error
-
-#### Get Occurrences of Crash Points >= Value (By Time)
-
-**HTTP Method**: GET  
-**Endpoint**: `/api/analytics/occurrences/min-crash-point/{value}/time`
-
-Retrieves the total occurrences of crash points greater than or equal to a specified value in the last N hours.
-
-**Path Parameters**:
-
-- `value` (float): Minimum crash point value to analyze
-
-**Query Parameters**:
-
-- `hours` (int, optional): Hours to look back (default: 1)
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "count": 8,
-        "total_games": 50,
-        "percentage": 16.0,
-        "start_time": "2024-03-20T10:00:00+05:30",
-        "end_time": "2024-03-20T11:00:00+05:30"
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid parameters
-- 500: Internal server error
-
-#### Get Occurrences of Exact Floor Value (By Time)
-
-**HTTP Method**: GET  
-**Endpoint**: `/api/analytics/occurrences/exact-floor/{value}/time`
-
-Retrieves the total occurrences of an exact floor value in the last N hours.
-
-**Path Parameters**:
-
-- `value` (int): Exact floor value to analyze
-
-**Query Parameters**:
-
-- `hours` (int, optional): Hours to look back (default: 1)
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "count": 3,
-        "total_games": 50,
-        "percentage": 6.0,
-        "start_time": "2024-03-20T10:00:00+05:30",
-        "end_time": "2024-03-20T11:00:00+05:30"
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid parameters
-- 500: Internal server error
-
-#### Get Occurrences of Multiple Crash Points >= Values (By Games)
-
-**HTTP Method**: POST  
-**Endpoint**: `/api/analytics/occurrences/min-crash-points`
-
-Retrieves the total occurrences of crash points greater than or equal to each specified value in the last N games.
-
-**Request Body**:
-
-```json
-{
-    "values": [2.0, 3.0, 5.0],  // List of minimum crash point values
-    "limit": 100  // Optional, number of games to analyze (default: 100)
-}
-```
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "2.0": {
-            "count": 25,
-            "total_games": 100,
-            "percentage": 25.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        },
-        "3.0": {
-            "count": 15,
-            "total_games": 100,
-            "percentage": 15.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        },
-        "5.0": {
-            "count": 5,
-            "total_games": 100,
-            "percentage": 5.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        }
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid request body or parameters
-- 500: Internal server error
-
-#### Get Occurrences of Multiple Crash Points >= Values (By Time)
-
-**HTTP Method**: POST  
-**Endpoint**: `/api/analytics/occurrences/min-crash-points/time`
-
-Retrieves the total occurrences of crash points greater than or equal to each specified value in the last N hours.
-
-**Request Body**:
-
-```json
-{
-    "values": [2.0, 3.0, 5.0],  // List of minimum crash point values
-    "hours": 1  // Optional, hours to look back (default: 1)
-}
-```
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "2.0": {
-            "count": 12,
-            "total_games": 50,
-            "percentage": 24.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        },
-        "3.0": {
-            "count": 8,
-            "total_games": 50,
-            "percentage": 16.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        },
-        "5.0": {
-            "count": 3,
-            "total_games": 50,
-            "percentage": 6.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        }
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid request body or parameters
-- 500: Internal server error
-
-#### Get Occurrences of Multiple Exact Floor Values (By Games)
-
-**HTTP Method**: POST  
-**Endpoint**: `/api/analytics/occurrences/exact-floors`
-
-Retrieves the total occurrences of exact floor values in the last N games.
-
-**Request Body**:
-
-```json
-{
-    "values": [2, 3, 5],  // List of floor values
-    "limit": 100  // Optional, number of games to analyze (default: 100)
-}
-```
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "2": {
-            "count": 20,
-            "total_games": 100,
-            "percentage": 20.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        },
-        "3": {
-            "count": 10,
-            "total_games": 100,
-            "percentage": 10.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        },
-        "5": {
-            "count": 5,
-            "total_games": 100,
-            "percentage": 5.0,
-            "first_game_time": "2024-03-20T10:00:00+05:30",
-            "last_game_time": "2024-03-20T11:00:00+05:30"
-        }
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid request body or parameters
-- 500: Internal server error
-
-#### Get Occurrences of Multiple Exact Floor Values (By Time)
-
-**HTTP Method**: POST  
-**Endpoint**: `/api/analytics/occurrences/exact-floors/time`
-
-Retrieves the total occurrences of exact floor values in the last N hours.
-
-**Request Body**:
-
-```json
-{
-    "values": [2, 3, 5],  // List of floor values
-    "hours": 1  // Optional, hours to look back (default: 1)
-}
-```
-
-**Headers**:
-
-- `X-Timezone` (optional): Timezone for datetime values (e.g., 'Asia/Kolkata')
-
-**Response Structure**:
-
-```json
-{
-    "status": "success",
-    "data": {
-        "2": {
-            "count": 10,
-            "total_games": 50,
-            "percentage": 20.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        },
-        "3": {
-            "count": 5,
-            "total_games": 50,
-            "percentage": 10.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        },
-        "5": {
-            "count": 2,
-            "total_games": 50,
-            "percentage": 4.0,
-            "start_time": "2024-03-20T10:00:00+05:30",
-            "end_time": "2024-03-20T11:00:00+05:30"
-        }
-    }
-}
-```
-
-**Error Responses**:
-
-- 400: Invalid request body or parameters
-- 500: Internal server error
