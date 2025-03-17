@@ -400,6 +400,12 @@ Batch game-set interval endpoints return:
 }
 ```
 
+Notes on intervals and timestamps:
+
+- All time intervals use clean boundaries (e.g., for 10-minute intervals: 10:00, 10:10, 10:20...)
+- The last interval may be incomplete but still has a clean boundary end time
+- All timestamps are returned in ISO format with timezone adjustment if X-Timezone header is provided
+
 Error Responses:
 
 - 400: Invalid parameters or request body
