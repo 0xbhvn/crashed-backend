@@ -1,4 +1,4 @@
-# BC Crash Game Analytics
+# Crash Game Analytics
 
 ## Overview
 
