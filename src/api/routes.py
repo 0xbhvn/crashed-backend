@@ -658,7 +658,8 @@ async def get_min_crash_point_occurrences_by_games_batch(request: web.Request) -
     Request body:
         {
             "values": [float],  // List of minimum crash point values
-            "limit": int  // Optional, number of games to analyze (default: 100)
+            "limit": int,  // Optional, number of games to analyze (default: 100)
+            "comparison": bool  // Optional, whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -679,6 +680,8 @@ async def get_min_crash_point_occurrences_by_games_batch(request: web.Request) -
             limit = int(body.get('limit', 100))
             if limit < 1:
                 return error_response("Limit must be greater than 0.", status=400)
+            # Get optional comparison flag
+            comparison = bool(body.get('comparison', True))
         except (json.JSONDecodeError, ValueError):
             return error_response("Invalid request body or values.", status=400)
 
@@ -691,19 +694,32 @@ async def get_min_crash_point_occurrences_by_games_batch(request: web.Request) -
         # Query the occurrences
         with db.get_session() as session:
             results = analytics.get_min_crash_point_occurrences_by_games_batch(
-                session, values, limit)
+                session, values, limit, comparison)
 
             # Convert datetime values to specified timezone if provided
             if timezone_name:
-                for result in results.values():
-                    result['first_game_time'] = convert_datetime_to_timezone(
-                        result['first_game_time'], timezone_name)
-                    result['last_game_time'] = convert_datetime_to_timezone(
-                        result['last_game_time'], timezone_name)
+                if comparison:
+                    for result in results.values():
+                        result['current_period']['first_game_time'] = convert_datetime_to_timezone(
+                            result['current_period']['first_game_time'], timezone_name)
+                        result['current_period']['last_game_time'] = convert_datetime_to_timezone(
+                            result['current_period']['last_game_time'], timezone_name)
+                        if result['previous_period']['first_game_time']:
+                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['first_game_time'], timezone_name)
+                        if result['previous_period']['last_game_time']:
+                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['last_game_time'], timezone_name)
+                else:
+                    for result in results.values():
+                        result['first_game_time'] = convert_datetime_to_timezone(
+                            result['first_game_time'], timezone_name)
+                        result['last_game_time'] = convert_datetime_to_timezone(
+                            result['last_game_time'], timezone_name)
 
             return json_response({
                 'status': 'success',
-                'data': {str(value): result for value, result in results.items()}
+                'data': results
             })
 
     except Exception as e:
@@ -720,7 +736,8 @@ async def get_min_crash_point_occurrences_by_time_batch(request: web.Request) ->
     Request body:
         {
             "values": [float],  // List of minimum crash point values
-            "hours": int  // Optional, hours to look back (default: 1)
+            "hours": int,  // Optional, hours to look back (default: 1)
+            "comparison": bool  // Optional, whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -741,6 +758,8 @@ async def get_min_crash_point_occurrences_by_time_batch(request: web.Request) ->
             hours = int(body.get('hours', 1))
             if hours < 1:
                 return error_response("Hours must be greater than 0.", status=400)
+            # Get optional comparison flag
+            comparison = bool(body.get('comparison', True))
         except (json.JSONDecodeError, ValueError):
             return error_response("Invalid request body or values.", status=400)
 
@@ -753,19 +772,51 @@ async def get_min_crash_point_occurrences_by_time_batch(request: web.Request) ->
         # Query the occurrences
         with db.get_session() as session:
             results = analytics.get_min_crash_point_occurrences_by_time_batch(
-                session, values, hours)
+                session, values, hours, comparison)
 
             # Convert datetime values to specified timezone if provided
             if timezone_name:
-                for result in results.values():
-                    result['start_time'] = convert_datetime_to_timezone(
-                        result['start_time'], timezone_name)
-                    result['end_time'] = convert_datetime_to_timezone(
-                        result['end_time'], timezone_name)
+                if comparison:
+                    for result in results.values():
+                        # Convert current period timestamps
+                        result['current_period']['start_time'] = convert_datetime_to_timezone(
+                            result['current_period']['start_time'], timezone_name)
+                        result['current_period']['end_time'] = convert_datetime_to_timezone(
+                            result['current_period']['end_time'], timezone_name)
+                        if result['current_period']['first_game_time']:
+                            result['current_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['first_game_time'], timezone_name)
+                        if result['current_period']['last_game_time']:
+                            result['current_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['last_game_time'], timezone_name)
+
+                        # Convert previous period timestamps
+                        result['previous_period']['start_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['start_time'], timezone_name)
+                        result['previous_period']['end_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['end_time'], timezone_name)
+                        if result['previous_period']['first_game_time']:
+                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['first_game_time'], timezone_name)
+                        if result['previous_period']['last_game_time']:
+                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['last_game_time'], timezone_name)
+                else:
+                    for result in results.values():
+                        result['start_time'] = convert_datetime_to_timezone(
+                            result['start_time'], timezone_name)
+                        result['end_time'] = convert_datetime_to_timezone(
+                            result['end_time'], timezone_name)
+                        if 'first_game_time' in result and result['first_game_time']:
+                            result['first_game_time'] = convert_datetime_to_timezone(
+                                result['first_game_time'], timezone_name)
+                        if 'last_game_time' in result and result['last_game_time']:
+                            result['last_game_time'] = convert_datetime_to_timezone(
+                                result['last_game_time'], timezone_name)
 
             return json_response({
                 'status': 'success',
-                'data': {str(value): result for value, result in results.items()}
+                'data': results
             })
 
     except Exception as e:
@@ -782,7 +833,8 @@ async def get_exact_floor_occurrences_by_games_batch(request: web.Request) -> we
     Request body:
         {
             "values": [int],  // List of floor values
-            "limit": int  // Optional, number of games to analyze (default: 100)
+            "limit": int,  // Optional, number of games to analyze (default: 100)
+            "comparison": bool  // Optional, whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -803,6 +855,8 @@ async def get_exact_floor_occurrences_by_games_batch(request: web.Request) -> we
             limit = int(body.get('limit', 100))
             if limit < 1:
                 return error_response("Limit must be greater than 0.", status=400)
+            # Get optional comparison flag
+            comparison = bool(body.get('comparison', True))
         except (json.JSONDecodeError, ValueError):
             return error_response("Invalid request body or values.", status=400)
 
@@ -815,19 +869,32 @@ async def get_exact_floor_occurrences_by_games_batch(request: web.Request) -> we
         # Query the occurrences
         with db.get_session() as session:
             results = analytics.get_exact_floor_occurrences_by_games_batch(
-                session, values, limit)
+                session, values, limit, comparison)
 
             # Convert datetime values to specified timezone if provided
             if timezone_name:
-                for result in results.values():
-                    result['first_game_time'] = convert_datetime_to_timezone(
-                        result['first_game_time'], timezone_name)
-                    result['last_game_time'] = convert_datetime_to_timezone(
-                        result['last_game_time'], timezone_name)
+                if comparison:
+                    for result in results.values():
+                        result['current_period']['first_game_time'] = convert_datetime_to_timezone(
+                            result['current_period']['first_game_time'], timezone_name)
+                        result['current_period']['last_game_time'] = convert_datetime_to_timezone(
+                            result['current_period']['last_game_time'], timezone_name)
+                        if result['previous_period']['first_game_time']:
+                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['first_game_time'], timezone_name)
+                        if result['previous_period']['last_game_time']:
+                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['last_game_time'], timezone_name)
+                else:
+                    for result in results.values():
+                        result['first_game_time'] = convert_datetime_to_timezone(
+                            result['first_game_time'], timezone_name)
+                        result['last_game_time'] = convert_datetime_to_timezone(
+                            result['last_game_time'], timezone_name)
 
             return json_response({
                 'status': 'success',
-                'data': {str(value): result for value, result in results.items()}
+                'data': results
             })
 
     except Exception as e:
@@ -844,7 +911,8 @@ async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web
     Request body:
         {
             "values": [int],  // List of floor values
-            "hours": int  // Optional, hours to look back (default: 1)
+            "hours": int,  // Optional, hours to look back (default: 1)
+            "comparison": bool  // Optional, whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -865,6 +933,8 @@ async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web
             hours = int(body.get('hours', 1))
             if hours < 1:
                 return error_response("Hours must be greater than 0.", status=400)
+            # Get optional comparison flag
+            comparison = bool(body.get('comparison', True))
         except (json.JSONDecodeError, ValueError):
             return error_response("Invalid request body or values.", status=400)
 
@@ -877,19 +947,51 @@ async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web
         # Query the occurrences
         with db.get_session() as session:
             results = analytics.get_exact_floor_occurrences_by_time_batch(
-                session, values, hours)
+                session, values, hours, comparison)
 
             # Convert datetime values to specified timezone if provided
             if timezone_name:
-                for result in results.values():
-                    result['start_time'] = convert_datetime_to_timezone(
-                        result['start_time'], timezone_name)
-                    result['end_time'] = convert_datetime_to_timezone(
-                        result['end_time'], timezone_name)
+                if comparison:
+                    for result in results.values():
+                        # Convert current period timestamps
+                        result['current_period']['start_time'] = convert_datetime_to_timezone(
+                            result['current_period']['start_time'], timezone_name)
+                        result['current_period']['end_time'] = convert_datetime_to_timezone(
+                            result['current_period']['end_time'], timezone_name)
+                        if result['current_period']['first_game_time']:
+                            result['current_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['first_game_time'], timezone_name)
+                        if result['current_period']['last_game_time']:
+                            result['current_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['last_game_time'], timezone_name)
+
+                        # Convert previous period timestamps
+                        result['previous_period']['start_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['start_time'], timezone_name)
+                        result['previous_period']['end_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['end_time'], timezone_name)
+                        if result['previous_period']['first_game_time']:
+                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['first_game_time'], timezone_name)
+                        if result['previous_period']['last_game_time']:
+                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['previous_period']['last_game_time'], timezone_name)
+                else:
+                    for result in results.values():
+                        result['start_time'] = convert_datetime_to_timezone(
+                            result['start_time'], timezone_name)
+                        result['end_time'] = convert_datetime_to_timezone(
+                            result['end_time'], timezone_name)
+                        if 'first_game_time' in result and result['first_game_time']:
+                            result['first_game_time'] = convert_datetime_to_timezone(
+                                result['first_game_time'], timezone_name)
+                        if 'last_game_time' in result and result['last_game_time']:
+                            result['last_game_time'] = convert_datetime_to_timezone(
+                                result['last_game_time'], timezone_name)
 
             return json_response({
                 'status': 'success',
-                'data': {str(value): result for value, result in results.items()}
+                'data': results
             })
 
     except Exception as e:

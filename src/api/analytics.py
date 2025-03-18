@@ -207,14 +207,14 @@ def get_min_crash_point_occurrences_by_games(
     """
     try:
         # Get the most recent 'limit' games
-        subquery = session.query(CrashGame.gameId)\
+        games = session.query(CrashGame)\
             .order_by(desc(CrashGame.endTime))\
             .limit(limit)\
-            .subquery()
+            .all()
 
         # Count occurrences within these games
         count = session.query(func.count(CrashGame.gameId))\
-            .filter(CrashGame.gameId.in_(subquery))\
+            .filter(CrashGame.gameId.in_(select(current_subquery.c.gameId)))\
             .filter(CrashGame.crashPoint >= min_value)\
             .scalar()
 
@@ -222,7 +222,7 @@ def get_min_crash_point_occurrences_by_games(
         first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).filter(CrashGame.gameId.in_(subquery)).first()
+        ).filter(CrashGame.gameId.in_(select(current_subquery.c.gameId))).first()
 
         return {
             'count': count,
@@ -307,14 +307,14 @@ def get_exact_floor_occurrences_by_games(
     """
     try:
         # Get the most recent 'limit' games
-        subquery = session.query(CrashGame.gameId)\
+        games = session.query(CrashGame)\
             .order_by(desc(CrashGame.endTime))\
             .limit(limit)\
-            .subquery()
+            .all()
 
         # Count occurrences within these games
         count = session.query(func.count(CrashGame.gameId))\
-            .filter(CrashGame.gameId.in_(subquery))\
+            .filter(CrashGame.gameId.in_(select(current_subquery.c.gameId)))\
             .filter(CrashGame.crashedFloor == floor_value)\
             .scalar()
 
@@ -322,7 +322,7 @@ def get_exact_floor_occurrences_by_games(
         first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).filter(CrashGame.gameId.in_(subquery)).first()
+        ).filter(CrashGame.gameId.in_(select(current_subquery.c.gameId))).first()
 
         return {
             'count': count,
@@ -387,58 +387,152 @@ def get_exact_floor_occurrences_by_time(
 def get_min_crash_point_occurrences_by_games_batch(
     session: Session,
     values: List[float],
-    limit: int = 100
+    limit: int = 100,
+    comparison: bool = True
 ) -> Dict[float, Dict[str, Any]]:
     """
-    Get the total occurrences of crash points >= specified values in the last N games.
+    Get the total occurrences of crash points >= specified values in the last N games,
+    and compare with the previous N games.
 
     Args:
         session: SQLAlchemy session
         values: List of minimum crash point values to count
         limit: Number of most recent games to analyze (default: 100)
+        comparison: Whether to include comparison with previous period (default: True)
 
     Returns:
-        Dictionary mapping each value to its occurrence statistics
+        Dictionary mapping each value to its occurrence statistics, optionally including comparison
+        with the previous set of games
     """
     try:
         results = {}
 
-        # Get the most recent 'limit' games
-        subquery = session.query(CrashGame.gameId)\
+        # Get the most recent 'limit' games (current period)
+        current_subquery = session.query(CrashGame.gameId, CrashGame.endTime)\
             .order_by(desc(CrashGame.endTime))\
             .limit(limit)\
             .subquery()
 
-        # Count the actual number of games in the subquery
+        # Count the actual number of games in the current subquery
         actual_game_count = session.query(
-            func.count()).select_from(subquery).scalar()
+            func.count()).select_from(current_subquery).scalar()
 
-        # Get first and last games in the set for reference
-        first_last_games = session.query(
+        # Get first and last games in the current set for reference
+        current_first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(subquery.c.gameId))).first()
+        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(current_subquery.c.gameId))).first()
 
-        # Convert datetime objects to ISO string format
-        first_time_iso = first_last_games.first_time.isoformat(
-        ) if first_last_games.first_time else None
-        last_time_iso = first_last_games.last_time.isoformat(
-        ) if first_last_games.last_time else None
+        # Convert datetime objects to ISO string format for current period
+        current_first_time_iso = current_first_last_games.first_time.isoformat(
+        ) if current_first_last_games.first_time else None
+        current_last_time_iso = current_first_last_games.last_time.isoformat(
+        ) if current_first_last_games.last_time else None
+
+        # Only get previous period data if comparison is enabled
+        if comparison:
+            # Get the oldest game from current period to use as cutoff for previous period
+            oldest_current_game = session.query(CrashGame.endTime)\
+                .order_by(desc(CrashGame.endTime))\
+                .offset(limit-1)\
+                .limit(1)\
+                .first()
+
+            if oldest_current_game:
+                cutoff_time = oldest_current_game.endTime
+
+                # Get the previous 'limit' games
+                prev_subquery = session.query(CrashGame.gameId, CrashGame.endTime)\
+                    .filter(CrashGame.endTime < cutoff_time)\
+                    .order_by(desc(CrashGame.endTime))\
+                    .limit(limit)\
+                    .subquery()
+
+                # Count the actual number of games in the previous subquery
+                prev_game_count = session.query(
+                    func.count()).select_from(prev_subquery).scalar()
+
+                # Get first and last games in the previous set for reference
+                prev_first_last_games = session.query(
+                    func.min(CrashGame.endTime).label('first_time'),
+                    func.max(CrashGame.endTime).label('last_time')
+                ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(prev_subquery.c.gameId))).first()
+
+                # Convert datetime objects to ISO string format for previous period
+                prev_first_time_iso = prev_first_last_games.first_time.isoformat(
+                ) if prev_first_last_games.first_time else None
+                prev_last_time_iso = prev_first_last_games.last_time.isoformat(
+                ) if prev_first_last_games.last_time else None
+            else:
+                prev_game_count = 0
+                prev_first_time_iso = None
+                prev_last_time_iso = None
+                prev_subquery = None
 
         for value in values:
-            # Count occurrences within these games
-            count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.gameId.in_(select(subquery.c.gameId)))\
+            # Count occurrences within current games
+            current_count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.gameId.in_(select(current_subquery.c.gameId)))\
                 .filter(CrashGame.crashPoint >= value)\
                 .scalar()
 
-            results[value] = {
-                'count': count,
-                'total_games': actual_game_count,
-                'percentage': (count / actual_game_count) * 100 if actual_game_count > 0 else 0,
-                'first_game_time': first_time_iso,
-                'last_game_time': last_time_iso
-            }
+            current_percentage = (
+                current_count / actual_game_count) * 100 if actual_game_count > 0 else 0
+
+            if comparison:
+                # Count occurrences within previous games
+                if 'prev_subquery' in locals() and prev_game_count > 0:
+                    prev_count = session.query(func.count(CrashGame.gameId))\
+                        .filter(CrashGame.gameId.in_(select(prev_subquery.c.gameId)))\
+                        .filter(CrashGame.crashPoint >= value)\
+                        .scalar()
+                    prev_percentage = (prev_count / prev_game_count) * \
+                        100 if prev_game_count > 0 else 0
+
+                    # Calculate differences
+                    count_diff = current_count - prev_count
+                    percentage_diff = current_percentage - prev_percentage
+
+                    # Calculate percent change (as a percentage of the previous value)
+                    count_percent_change = (
+                        (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+                else:
+                    prev_count = 0
+                    prev_percentage = 0
+                    count_diff = None
+                    percentage_diff = None
+                    count_percent_change = None
+
+                results[value] = {
+                    'current_period': {
+                        'count': current_count,
+                        'total_games': actual_game_count,
+                        'percentage': current_percentage,
+                        'first_game_time': current_first_time_iso,
+                        'last_game_time': current_last_time_iso
+                    },
+                    'previous_period': {
+                        'count': prev_count,
+                        'total_games': prev_game_count,
+                        'percentage': prev_percentage,
+                        'first_game_time': prev_first_time_iso,
+                        'last_game_time': prev_last_time_iso
+                    },
+                    'comparison': {
+                        'count_diff': count_diff,
+                        'percentage_diff': percentage_diff,
+                        'count_percent_change': count_percent_change
+                    }
+                }
+            else:
+                # Return the original, simpler structure without comparison
+                results[value] = {
+                    'count': current_count,
+                    'total_games': actual_game_count,
+                    'percentage': current_percentage,
+                    'first_game_time': current_first_time_iso,
+                    'last_game_time': current_last_time_iso
+                }
 
         return results
 
@@ -451,45 +545,138 @@ def get_min_crash_point_occurrences_by_games_batch(
 def get_min_crash_point_occurrences_by_time_batch(
     session: Session,
     values: List[float],
-    hours: int = 1
+    hours: int = 1,
+    comparison: bool = True
 ) -> Dict[float, Dict[str, Any]]:
     """
-    Get the total occurrences of crash points >= specified values in the last N hours.
+    Get the total occurrences of crash points >= specified values in the last N hours,
+    and compare with the previous N hours.
 
     Args:
         session: SQLAlchemy session
         values: List of minimum crash point values to count
         hours: Number of hours to look back (default: 1)
+        comparison: Whether to include comparison with previous period (default: True)
 
     Returns:
-        Dictionary mapping each value to its occurrence statistics
+        Dictionary mapping each value to its occurrence statistics, optionally including comparison
+        with the previous time period
     """
     try:
         results = {}
+        now = datetime.now(timezone.utc)
 
-        # Calculate the time threshold in UTC
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(hours=hours)
+        # Current interval
+        start_time = now - timedelta(hours=hours)
+        end_time = now
 
-        # Get total games in the time period
-        total_games = session.query(func.count(CrashGame.gameId))\
-            .filter(CrashGame.endTime >= start_time)\
-            .scalar()
+        # Previous interval (only if comparison is enabled)
+        if comparison:
+            prev_start_time = start_time - timedelta(hours=hours)
+            prev_end_time = start_time
 
         for value in values:
-            # Count occurrences within the time period
-            count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.endTime >= start_time)\
-                .filter(CrashGame.crashPoint >= value)\
-                .scalar()
+            # Current interval query
+            current_stats = session.query(
+                func.count(CrashGame.gameId).label('count'),
+                func.min(CrashGame.endTime).label('first_time'),
+                func.max(CrashGame.endTime).label('last_time')
+            ).filter(
+                CrashGame.endTime >= start_time,
+                CrashGame.endTime <= end_time,
+                CrashGame.crashPoint >= value
+            ).first()
 
-            results[value] = {
-                'count': count,
-                'total_games': total_games,
-                'percentage': (count / total_games) * 100 if total_games > 0 else 0,
-                'start_time': start_time,
-                'end_time': end_time
-            }
+            # Total games in current interval
+            total_games = session.query(func.count(CrashGame.gameId))\
+                .filter(
+                    CrashGame.endTime >= start_time,
+                    CrashGame.endTime <= end_time
+            ).scalar()
+
+            # Calculate occurrence counts and percentages
+            count = current_stats.count if current_stats else 0
+            percentage = (count / total_games) * 100 if total_games > 0 else 0
+
+            # Format datetime objects as ISO strings for current period
+            first_time_iso = current_stats.first_time.isoformat(
+            ) if current_stats and current_stats.first_time else None
+            last_time_iso = current_stats.last_time.isoformat(
+            ) if current_stats and current_stats.last_time else None
+
+            if comparison:
+                # Previous interval query
+                prev_stats = session.query(
+                    func.count(CrashGame.gameId).label('count'),
+                    func.min(CrashGame.endTime).label('first_time'),
+                    func.max(CrashGame.endTime).label('last_time')
+                ).filter(
+                    CrashGame.endTime >= prev_start_time,
+                    CrashGame.endTime <= prev_end_time,
+                    CrashGame.crashPoint >= value
+                ).first()
+
+                # Total games in previous interval
+                prev_total_games = session.query(func.count(CrashGame.gameId))\
+                    .filter(
+                        CrashGame.endTime >= prev_start_time,
+                        CrashGame.endTime <= prev_end_time
+                ).scalar()
+
+                prev_count = prev_stats.count if prev_stats else 0
+                prev_percentage = (prev_count / prev_total_games) * \
+                    100 if prev_total_games > 0 else 0
+
+                # Calculate differences
+                count_diff = count - prev_count
+                percentage_diff = percentage - prev_percentage
+
+                # Calculate percent change (as a percentage of the previous value)
+                count_percent_change = (
+                    (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+
+                # Format datetime objects as ISO strings for previous period
+                prev_first_time_iso = prev_stats.first_time.isoformat(
+                ) if prev_stats and prev_stats.first_time else None
+                prev_last_time_iso = prev_stats.last_time.isoformat(
+                ) if prev_stats and prev_stats.last_time else None
+
+                results[value] = {
+                    'current_period': {
+                        'count': count,
+                        'total_games': total_games,
+                        'percentage': percentage,
+                        'start_time': start_time.isoformat(),
+                        'end_time': end_time.isoformat(),
+                        'first_game_time': first_time_iso,
+                        'last_game_time': last_time_iso
+                    },
+                    'previous_period': {
+                        'count': prev_count,
+                        'total_games': prev_total_games,
+                        'percentage': prev_percentage,
+                        'start_time': prev_start_time.isoformat(),
+                        'end_time': prev_end_time.isoformat(),
+                        'first_game_time': prev_first_time_iso,
+                        'last_game_time': prev_last_time_iso
+                    },
+                    'comparison': {
+                        'count_diff': count_diff,
+                        'percentage_diff': percentage_diff,
+                        'count_percent_change': count_percent_change
+                    }
+                }
+            else:
+                # Return the original, simpler structure without comparison
+                results[value] = {
+                    'count': count,
+                    'total_games': total_games,
+                    'percentage': percentage,
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'first_game_time': first_time_iso,
+                    'last_game_time': last_time_iso
+                }
 
         return results
 
@@ -502,58 +689,153 @@ def get_min_crash_point_occurrences_by_time_batch(
 def get_exact_floor_occurrences_by_games_batch(
     session: Session,
     values: List[int],
-    limit: int = 100
+    limit: int = 100,
+    comparison: bool = True
 ) -> Dict[int, Dict[str, Any]]:
     """
-    Get the total occurrences of exact floor values in the last N games.
+    Get the total occurrences of exact floor values in the last N games,
+    and compare with the previous N games.
 
     Args:
         session: SQLAlchemy session
         values: List of floor values to count
         limit: Number of most recent games to analyze (default: 100)
+        comparison: Whether to include comparison with previous period (default: True)
 
     Returns:
-        Dictionary mapping each value to its occurrence statistics
+        Dictionary mapping each value to its occurrence statistics, optionally including comparison
+        with the previous set of games
     """
     try:
         results = {}
 
-        # Get the most recent 'limit' games
-        subquery = session.query(CrashGame.gameId)\
+        # Get the most recent 'limit' games (current period)
+        current_subquery = session.query(CrashGame.gameId, CrashGame.endTime)\
             .order_by(desc(CrashGame.endTime))\
             .limit(limit)\
             .subquery()
 
-        # Count the actual number of games in the subquery
+        # Count the actual number of games in the current subquery
         actual_game_count = session.query(
-            func.count()).select_from(subquery).scalar()
+            func.count()).select_from(current_subquery).scalar()
 
-        # Get first and last games in the set for reference
-        first_last_games = session.query(
+        # Get first and last games in the current set for reference
+        current_first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(subquery.c.gameId))).first()
+        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(current_subquery.c.gameId))).first()
 
-        # Convert datetime objects to ISO string format
-        first_time_iso = first_last_games.first_time.isoformat(
-        ) if first_last_games.first_time else None
-        last_time_iso = first_last_games.last_time.isoformat(
-        ) if first_last_games.last_time else None
+        # Convert datetime objects to ISO string format for current period
+        current_first_time_iso = current_first_last_games.first_time.isoformat(
+        ) if current_first_last_games.first_time else None
+        current_last_time_iso = current_first_last_games.last_time.isoformat(
+        ) if current_first_last_games.last_time else None
+
+        # Only get previous period data if comparison is enabled
+        if comparison:
+            # Get the oldest game from current period to use as cutoff for previous period
+            oldest_current_game = session.query(CrashGame.endTime)\
+                .order_by(desc(CrashGame.endTime))\
+                .offset(limit-1)\
+                .limit(1)\
+                .first()
+
+            if oldest_current_game:
+                cutoff_time = oldest_current_game.endTime
+
+                # Get the previous 'limit' games
+                prev_subquery = session.query(
+                    CrashGame.gameId, CrashGame.endTime)\
+                    .filter(CrashGame.endTime < cutoff_time)\
+                    .order_by(desc(CrashGame.endTime))\
+                    .limit(limit)\
+                    .subquery()
+
+                # Count the actual number of games in the previous subquery
+                prev_game_count = session.query(
+                    func.count()).select_from(prev_subquery).scalar()
+
+                # Get first and last games in the previous set for reference
+                prev_first_last_games = session.query(
+                    func.min(CrashGame.endTime).label('first_time'),
+                    func.max(CrashGame.endTime).label('last_time')
+                ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(prev_subquery.c.gameId))).first()
+
+                # Convert datetime objects to ISO string format for previous period
+                prev_first_time_iso = prev_first_last_games.first_time.isoformat(
+                ) if prev_first_last_games.first_time else None
+                prev_last_time_iso = prev_first_last_games.last_time.isoformat(
+                ) if prev_first_last_games.last_time else None
+            else:
+                prev_game_count = 0
+                prev_first_time_iso = None
+                prev_last_time_iso = None
+                prev_subquery = None
 
         for value in values:
-            # Count occurrences within these games
-            count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.gameId.in_(select(subquery.c.gameId)))\
+            # Count occurrences within current games
+            current_count = session.query(func.count(CrashGame.gameId))\
+                .filter(CrashGame.gameId.in_(select(current_subquery.c.gameId)))\
                 .filter(CrashGame.crashedFloor == value)\
                 .scalar()
 
-            results[value] = {
-                'count': count,
-                'total_games': actual_game_count,
-                'percentage': (count / actual_game_count) * 100 if actual_game_count > 0 else 0,
-                'first_game_time': first_time_iso,
-                'last_game_time': last_time_iso
-            }
+            current_percentage = (
+                current_count / actual_game_count) * 100 if actual_game_count > 0 else 0
+
+            if comparison:
+                # Count occurrences within previous games
+                if 'prev_subquery' in locals() and prev_game_count > 0:
+                    prev_count = session.query(func.count(CrashGame.gameId))\
+                        .filter(CrashGame.gameId.in_(select(prev_subquery.c.gameId)))\
+                        .filter(CrashGame.crashedFloor == value)\
+                        .scalar()
+                    prev_percentage = (prev_count / prev_game_count) * \
+                        100 if prev_game_count > 0 else 0
+
+                    # Calculate differences
+                    count_diff = current_count - prev_count
+                    percentage_diff = current_percentage - prev_percentage
+
+                    # Calculate percent change (as a percentage of the previous value)
+                    count_percent_change = (
+                        (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+                else:
+                    prev_count = 0
+                    prev_percentage = 0
+                    count_diff = None
+                    percentage_diff = None
+                    count_percent_change = None
+
+                results[value] = {
+                    'current_period': {
+                        'count': current_count,
+                        'total_games': actual_game_count,
+                        'percentage': current_percentage,
+                        'first_game_time': current_first_time_iso,
+                        'last_game_time': current_last_time_iso
+                    },
+                    'previous_period': {
+                        'count': prev_count,
+                        'total_games': prev_game_count,
+                        'percentage': prev_percentage,
+                        'first_game_time': prev_first_time_iso,
+                        'last_game_time': prev_last_time_iso
+                    },
+                    'comparison': {
+                        'count_diff': count_diff,
+                        'percentage_diff': percentage_diff,
+                        'count_percent_change': count_percent_change
+                    }
+                }
+            else:
+                # Return the original, simpler structure without comparison
+                results[value] = {
+                    'count': current_count,
+                    'total_games': actual_game_count,
+                    'percentage': current_percentage,
+                    'first_game_time': current_first_time_iso,
+                    'last_game_time': current_last_time_iso
+                }
 
         return results
 
@@ -566,45 +848,138 @@ def get_exact_floor_occurrences_by_games_batch(
 def get_exact_floor_occurrences_by_time_batch(
     session: Session,
     values: List[int],
-    hours: int = 1
+    hours: int = 1,
+    comparison: bool = True
 ) -> Dict[int, Dict[str, Any]]:
     """
-    Get the total occurrences of exact floor values in the last N hours.
+    Get the total occurrences of exact floor values in the last N hours,
+    and compare with the previous N hours.
 
     Args:
         session: SQLAlchemy session
         values: List of floor values to count
         hours: Number of hours to look back (default: 1)
+        comparison: Whether to include comparison with previous period (default: True)
 
     Returns:
-        Dictionary mapping each value to its occurrence statistics
+        Dictionary mapping each value to its occurrence statistics, optionally including comparison
+        with the previous time period
     """
     try:
         results = {}
+        now = datetime.now(timezone.utc)
 
-        # Calculate the time threshold in UTC
-        end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(hours=hours)
+        # Current interval
+        start_time = now - timedelta(hours=hours)
+        end_time = now
 
-        # Get total games in the time period
-        total_games = session.query(func.count(CrashGame.gameId))\
-            .filter(CrashGame.endTime >= start_time)\
-            .scalar()
+        # Previous interval (only if comparison is enabled)
+        if comparison:
+            prev_start_time = start_time - timedelta(hours=hours)
+            prev_end_time = start_time
 
         for value in values:
-            # Count occurrences within the time period
-            count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.endTime >= start_time)\
-                .filter(CrashGame.crashedFloor == value)\
-                .scalar()
+            # Current interval query
+            current_stats = session.query(
+                func.count(CrashGame.gameId).label('count'),
+                func.min(CrashGame.endTime).label('first_time'),
+                func.max(CrashGame.endTime).label('last_time')
+            ).filter(
+                CrashGame.endTime >= start_time,
+                CrashGame.endTime <= end_time,
+                CrashGame.crashedFloor == value
+            ).first()
 
-            results[value] = {
-                'count': count,
-                'total_games': total_games,
-                'percentage': (count / total_games) * 100 if total_games > 0 else 0,
-                'start_time': start_time,
-                'end_time': end_time
-            }
+            # Total games in current interval
+            total_games = session.query(func.count(CrashGame.gameId))\
+                .filter(
+                    CrashGame.endTime >= start_time,
+                    CrashGame.endTime <= end_time
+            ).scalar()
+
+            # Calculate occurrence counts and percentages
+            count = current_stats.count if current_stats else 0
+            percentage = (count / total_games) * 100 if total_games > 0 else 0
+
+            # Format datetime objects as ISO strings for current period
+            first_time_iso = current_stats.first_time.isoformat(
+            ) if current_stats and current_stats.first_time else None
+            last_time_iso = current_stats.last_time.isoformat(
+            ) if current_stats and current_stats.last_time else None
+
+            if comparison:
+                # Previous interval query
+                prev_stats = session.query(
+                    func.count(CrashGame.gameId).label('count'),
+                    func.min(CrashGame.endTime).label('first_time'),
+                    func.max(CrashGame.endTime).label('last_time')
+                ).filter(
+                    CrashGame.endTime >= prev_start_time,
+                    CrashGame.endTime <= prev_end_time,
+                    CrashGame.crashedFloor == value
+                ).first()
+
+                # Total games in previous interval
+                prev_total_games = session.query(func.count(CrashGame.gameId))\
+                    .filter(
+                        CrashGame.endTime >= prev_start_time,
+                        CrashGame.endTime <= prev_end_time
+                ).scalar()
+
+                prev_count = prev_stats.count if prev_stats else 0
+                prev_percentage = (prev_count / prev_total_games) * \
+                    100 if prev_total_games > 0 else 0
+
+                # Calculate differences
+                count_diff = count - prev_count
+                percentage_diff = percentage - prev_percentage
+
+                # Calculate percent change (as a percentage of the previous value)
+                count_percent_change = (
+                    (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+
+                # Format datetime objects as ISO strings for previous period
+                prev_first_time_iso = prev_stats.first_time.isoformat(
+                ) if prev_stats and prev_stats.first_time else None
+                prev_last_time_iso = prev_stats.last_time.isoformat(
+                ) if prev_stats and prev_stats.last_time else None
+
+                results[value] = {
+                    'current_period': {
+                        'count': count,
+                        'total_games': total_games,
+                        'percentage': percentage,
+                        'start_time': start_time.isoformat(),
+                        'end_time': end_time.isoformat(),
+                        'first_game_time': first_time_iso,
+                        'last_game_time': last_time_iso
+                    },
+                    'previous_period': {
+                        'count': prev_count,
+                        'total_games': prev_total_games,
+                        'percentage': prev_percentage,
+                        'start_time': prev_start_time.isoformat(),
+                        'end_time': prev_end_time.isoformat(),
+                        'first_game_time': prev_first_time_iso,
+                        'last_game_time': prev_last_time_iso
+                    },
+                    'comparison': {
+                        'count_diff': count_diff,
+                        'percentage_diff': percentage_diff,
+                        'count_percent_change': count_percent_change
+                    }
+                }
+            else:
+                # Return the original, simpler structure without comparison
+                results[value] = {
+                    'count': count,
+                    'total_games': total_games,
+                    'percentage': percentage,
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                    'first_game_time': first_time_iso,
+                    'last_game_time': last_time_iso
+                }
 
         return results
 
