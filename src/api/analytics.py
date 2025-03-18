@@ -7,7 +7,7 @@ This module provides functions for analyzing crash game data and computing vario
 import logging
 from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, select
 from datetime import datetime, timedelta, timezone
 
 from ..db.models import CrashGame
@@ -409,25 +409,35 @@ def get_min_crash_point_occurrences_by_games_batch(
             .limit(limit)\
             .subquery()
 
+        # Count the actual number of games in the subquery
+        actual_game_count = session.query(
+            func.count()).select_from(subquery).scalar()
+
         # Get first and last games in the set for reference
         first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).filter(CrashGame.gameId.in_(subquery)).first()
+        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(subquery.c.gameId))).first()
+
+        # Convert datetime objects to ISO string format
+        first_time_iso = first_last_games.first_time.isoformat(
+        ) if first_last_games.first_time else None
+        last_time_iso = first_last_games.last_time.isoformat(
+        ) if first_last_games.last_time else None
 
         for value in values:
             # Count occurrences within these games
             count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.gameId.in_(subquery))\
+                .filter(CrashGame.gameId.in_(select(subquery.c.gameId)))\
                 .filter(CrashGame.crashPoint >= value)\
                 .scalar()
 
             results[value] = {
                 'count': count,
-                'total_games': limit,
-                'percentage': (count / limit) * 100 if limit > 0 else 0,
-                'first_game_time': first_last_games.first_time,
-                'last_game_time': first_last_games.last_time
+                'total_games': actual_game_count,
+                'percentage': (count / actual_game_count) * 100 if actual_game_count > 0 else 0,
+                'first_game_time': first_time_iso,
+                'last_game_time': last_time_iso
             }
 
         return results
@@ -514,25 +524,35 @@ def get_exact_floor_occurrences_by_games_batch(
             .limit(limit)\
             .subquery()
 
+        # Count the actual number of games in the subquery
+        actual_game_count = session.query(
+            func.count()).select_from(subquery).scalar()
+
         # Get first and last games in the set for reference
         first_last_games = session.query(
             func.min(CrashGame.endTime).label('first_time'),
             func.max(CrashGame.endTime).label('last_time')
-        ).filter(CrashGame.gameId.in_(subquery)).first()
+        ).select_from(CrashGame).filter(CrashGame.gameId.in_(select(subquery.c.gameId))).first()
+
+        # Convert datetime objects to ISO string format
+        first_time_iso = first_last_games.first_time.isoformat(
+        ) if first_last_games.first_time else None
+        last_time_iso = first_last_games.last_time.isoformat(
+        ) if first_last_games.last_time else None
 
         for value in values:
             # Count occurrences within these games
             count = session.query(func.count(CrashGame.gameId))\
-                .filter(CrashGame.gameId.in_(subquery))\
+                .filter(CrashGame.gameId.in_(select(subquery.c.gameId)))\
                 .filter(CrashGame.crashedFloor == value)\
                 .scalar()
 
             results[value] = {
                 'count': count,
-                'total_games': limit,
-                'percentage': (count / limit) * 100 if limit > 0 else 0,
-                'first_game_time': first_last_games.first_time,
-                'last_game_time': first_last_games.last_time
+                'total_games': actual_game_count,
+                'percentage': (count / actual_game_count) * 100 if actual_game_count > 0 else 0,
+                'first_game_time': first_time_iso,
+                'last_game_time': last_time_iso
             }
 
         return results
