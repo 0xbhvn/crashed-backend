@@ -700,16 +700,8 @@ async def get_min_crash_point_occurrences_by_games_batch(request: web.Request) -
             if timezone_name:
                 if comparison:
                     for result in results.values():
-                        result['current_period']['first_game_time'] = convert_datetime_to_timezone(
-                            result['current_period']['first_game_time'], timezone_name)
-                        result['current_period']['last_game_time'] = convert_datetime_to_timezone(
-                            result['current_period']['last_game_time'], timezone_name)
-                        if result['previous_period']['first_game_time']:
-                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['first_game_time'], timezone_name)
-                        if result['previous_period']['last_game_time']:
-                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['last_game_time'], timezone_name)
+                        # We don't need to convert here since we're converting in the analytics function
+                        pass
                 else:
                     for result in results.values():
                         result['first_game_time'] = convert_datetime_to_timezone(
@@ -778,29 +770,8 @@ async def get_min_crash_point_occurrences_by_time_batch(request: web.Request) ->
             if timezone_name:
                 if comparison:
                     for result in results.values():
-                        # Convert current period timestamps
-                        result['current_period']['start_time'] = convert_datetime_to_timezone(
-                            result['current_period']['start_time'], timezone_name)
-                        result['current_period']['end_time'] = convert_datetime_to_timezone(
-                            result['current_period']['end_time'], timezone_name)
-                        if result['current_period']['first_game_time']:
-                            result['current_period']['first_game_time'] = convert_datetime_to_timezone(
-                                result['current_period']['first_game_time'], timezone_name)
-                        if result['current_period']['last_game_time']:
-                            result['current_period']['last_game_time'] = convert_datetime_to_timezone(
-                                result['current_period']['last_game_time'], timezone_name)
-
-                        # Convert previous period timestamps
-                        result['previous_period']['start_time'] = convert_datetime_to_timezone(
-                            result['previous_period']['start_time'], timezone_name)
-                        result['previous_period']['end_time'] = convert_datetime_to_timezone(
-                            result['previous_period']['end_time'], timezone_name)
-                        if result['previous_period']['first_game_time']:
-                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['first_game_time'], timezone_name)
-                        if result['previous_period']['last_game_time']:
-                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['last_game_time'], timezone_name)
+                        # We don't need to convert here since we're converting in the analytics function
+                        pass
                 else:
                     for result in results.values():
                         result['start_time'] = convert_datetime_to_timezone(
@@ -875,10 +846,23 @@ async def get_exact_floor_occurrences_by_games_batch(request: web.Request) -> we
             if timezone_name:
                 if comparison:
                     for result in results.values():
-                        result['current_period']['first_game_time'] = convert_datetime_to_timezone(
-                            result['current_period']['first_game_time'], timezone_name)
-                        result['current_period']['last_game_time'] = convert_datetime_to_timezone(
-                            result['current_period']['last_game_time'], timezone_name)
+                        # Convert current period timestamps
+                        result['current_period']['start_time'] = convert_datetime_to_timezone(
+                            result['current_period']['start_time'], timezone_name)
+                        result['current_period']['end_time'] = convert_datetime_to_timezone(
+                            result['current_period']['end_time'], timezone_name)
+                        if result['current_period']['first_game_time']:
+                            result['current_period']['first_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['first_game_time'], timezone_name)
+                        if result['current_period']['last_game_time']:
+                            result['current_period']['last_game_time'] = convert_datetime_to_timezone(
+                                result['current_period']['last_game_time'], timezone_name)
+
+                        # Convert previous period timestamps
+                        result['previous_period']['start_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['start_time'], timezone_name)
+                        result['previous_period']['end_time'] = convert_datetime_to_timezone(
+                            result['previous_period']['end_time'], timezone_name)
                         if result['previous_period']['first_game_time']:
                             result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
                                 result['previous_period']['first_game_time'], timezone_name)
@@ -953,29 +937,8 @@ async def get_exact_floor_occurrences_by_time_batch(request: web.Request) -> web
             if timezone_name:
                 if comparison:
                     for result in results.values():
-                        # Convert current period timestamps
-                        result['current_period']['start_time'] = convert_datetime_to_timezone(
-                            result['current_period']['start_time'], timezone_name)
-                        result['current_period']['end_time'] = convert_datetime_to_timezone(
-                            result['current_period']['end_time'], timezone_name)
-                        if result['current_period']['first_game_time']:
-                            result['current_period']['first_game_time'] = convert_datetime_to_timezone(
-                                result['current_period']['first_game_time'], timezone_name)
-                        if result['current_period']['last_game_time']:
-                            result['current_period']['last_game_time'] = convert_datetime_to_timezone(
-                                result['current_period']['last_game_time'], timezone_name)
-
-                        # Convert previous period timestamps
-                        result['previous_period']['start_time'] = convert_datetime_to_timezone(
-                            result['previous_period']['start_time'], timezone_name)
-                        result['previous_period']['end_time'] = convert_datetime_to_timezone(
-                            result['previous_period']['end_time'], timezone_name)
-                        if result['previous_period']['first_game_time']:
-                            result['previous_period']['first_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['first_game_time'], timezone_name)
-                        if result['previous_period']['last_game_time']:
-                            result['previous_period']['last_game_time'] = convert_datetime_to_timezone(
-                                result['previous_period']['last_game_time'], timezone_name)
+                        # We don't need to convert here since we're converting in the analytics function
+                        pass
                 else:
                     for result in results.values():
                         result['start_time'] = convert_datetime_to_timezone(

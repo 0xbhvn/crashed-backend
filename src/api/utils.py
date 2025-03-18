@@ -22,12 +22,12 @@ DEFAULT_API_TIMEZONE = 'Asia/Kolkata'
 TIMEZONE_HEADER = 'X-Timezone'
 
 
-def convert_datetime_to_timezone(dt: Optional[datetime], timezone_name: Optional[str] = None) -> Optional[str]:
+def convert_datetime_to_timezone(dt: Optional[Union[datetime, str]], timezone_name: Optional[str] = None) -> Optional[str]:
     """
     Convert UTC datetime to the specified timezone.
 
     Args:
-        dt: Datetime object to convert
+        dt: Datetime object or ISO formatted string to convert
         timezone_name: Optional timezone name from request header
 
     Returns:
@@ -35,6 +35,14 @@ def convert_datetime_to_timezone(dt: Optional[datetime], timezone_name: Optional
     """
     if dt is None:
         return None
+
+    # If dt is already a string (ISO format), try to parse it
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+            logger.error(f"Failed to parse datetime string: {dt}")
+            return dt  # Return original string if parsing fails
 
     # Determine which timezone to use:
     # 1. Use timezone from header if provided and valid

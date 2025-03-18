@@ -633,7 +633,7 @@ def get_min_crash_point_occurrences_by_time_batch(
 
                 # Calculate percent change (as a percentage of the previous value)
                 count_percent_change = (
-                    (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+                    (count - prev_count) / prev_count) * 100 if prev_count > 0 else None
 
                 # Format datetime objects as ISO strings for previous period
                 prev_first_time_iso = prev_stats.first_time.isoformat(
@@ -936,7 +936,7 @@ def get_exact_floor_occurrences_by_time_batch(
 
                 # Calculate percent change (as a percentage of the previous value)
                 count_percent_change = (
-                    (current_count - prev_count) / prev_count) * 100 if prev_count > 0 else None
+                    (count - prev_count) / prev_count) * 100 if prev_count > 0 else None
 
                 # Format datetime objects as ISO strings for previous period
                 prev_first_time_iso = prev_stats.first_time.isoformat(
