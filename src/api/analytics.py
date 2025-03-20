@@ -1020,10 +1020,22 @@ def get_series_without_min_crash_point_by_games(
 
         series_list = []
         current_series = None
+        current_follow_games = []
+        in_follow_streak = False
 
         for i, game in enumerate(games):
             # If game has crash point < min_value, it's part of a series
             if game.crashPoint < min_value:
+                # If we were collecting follow streak games for a previous series
+                if in_follow_streak and current_follow_games and series_list:
+                    # Add the collected follow streak to the most recent series
+                    series_list[-1]['follow_streak'] = {
+                        'count': len(current_follow_games),
+                        'games': current_follow_games
+                    }
+                    current_follow_games = []
+                    in_follow_streak = False
+
                 # Start a new series if needed
                 if current_series is None:
                     current_series = {
@@ -1031,7 +1043,11 @@ def get_series_without_min_crash_point_by_games(
                         'start_time': game.endTime,
                         'end_game_id': game.gameId,
                         'end_time': game.endTime,
-                        'length': 1
+                        'length': 1,
+                        'follow_streak': {
+                            'count': 0,
+                            'games': []
+                        }
                     }
                 else:
                     # Extend the current series
@@ -1039,14 +1055,46 @@ def get_series_without_min_crash_point_by_games(
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
             else:
-                # If we had a series going, save it
+                # Game with crash point >= min_value
                 if current_series is not None:
+                    # End the current series and start collecting follow streak games
+                    in_follow_streak = True
+                    current_follow_games = [{
+                        'game_id': game.gameId,
+                        'crash_point': game.crashPoint,
+                        'time': game.endTime
+                    }]
+
+                    # Set an empty follow_streak as a placeholder
+                    current_series['follow_streak'] = {
+                        'count': 0,
+                        'games': []
+                    }
+
                     series_list.append(current_series)
                     current_series = None
+                elif in_follow_streak:
+                    # Continue collecting follow streak games for the previous series
+                    current_follow_games.append({
+                        'game_id': game.gameId,
+                        'crash_point': game.crashPoint,
+                        'time': game.endTime
+                    })
 
         # Add the last series if it exists
         if current_series is not None:
+            current_series['follow_streak'] = {
+                'count': 0,
+                'games': []
+            }
             series_list.append(current_series)
+
+        # Add any remaining follow streak games to the last series
+        if in_follow_streak and current_follow_games and series_list:
+            series_list[-1]['follow_streak'] = {
+                'count': len(current_follow_games),
+                'games': current_follow_games
+            }
 
         # Sort the series list based on the specified criterion
         if sort_by.lower() == 'length':
@@ -1096,10 +1144,22 @@ def get_series_without_min_crash_point_by_time(
 
         series_list = []
         current_series = None
+        current_follow_games = []
+        in_follow_streak = False
 
         for i, game in enumerate(games):
             # If game has crash point < min_value, it's part of a series
             if game.crashPoint < min_value:
+                # If we were collecting follow streak games for a previous series
+                if in_follow_streak and current_follow_games and series_list:
+                    # Add the collected follow streak to the most recent series
+                    series_list[-1]['follow_streak'] = {
+                        'count': len(current_follow_games),
+                        'games': current_follow_games
+                    }
+                    current_follow_games = []
+                    in_follow_streak = False
+
                 # Start a new series if needed
                 if current_series is None:
                     current_series = {
@@ -1107,7 +1167,11 @@ def get_series_without_min_crash_point_by_time(
                         'start_time': game.endTime,
                         'end_game_id': game.gameId,
                         'end_time': game.endTime,
-                        'length': 1
+                        'length': 1,
+                        'follow_streak': {
+                            'count': 0,
+                            'games': []
+                        }
                     }
                 else:
                     # Extend the current series
@@ -1115,14 +1179,46 @@ def get_series_without_min_crash_point_by_time(
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
             else:
-                # If we had a series going, save it
+                # Game with crash point >= min_value
                 if current_series is not None:
+                    # End the current series and start collecting follow streak games
+                    in_follow_streak = True
+                    current_follow_games = [{
+                        'game_id': game.gameId,
+                        'crash_point': game.crashPoint,
+                        'time': game.endTime
+                    }]
+
+                    # Set an empty follow_streak as a placeholder
+                    current_series['follow_streak'] = {
+                        'count': 0,
+                        'games': []
+                    }
+
                     series_list.append(current_series)
                     current_series = None
+                elif in_follow_streak:
+                    # Continue collecting follow streak games for the previous series
+                    current_follow_games.append({
+                        'game_id': game.gameId,
+                        'crash_point': game.crashPoint,
+                        'time': game.endTime
+                    })
 
         # Add the last series if it exists
         if current_series is not None:
+            current_series['follow_streak'] = {
+                'count': 0,
+                'games': []
+            }
             series_list.append(current_series)
+
+        # Add any remaining follow streak games to the last series
+        if in_follow_streak and current_follow_games and series_list:
+            series_list[-1]['follow_streak'] = {
+                'count': len(current_follow_games),
+                'games': current_follow_games
+            }
 
         # Sort the series list based on the specified criterion
         if sort_by.lower() == 'length':

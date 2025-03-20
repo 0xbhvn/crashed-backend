@@ -1024,6 +1024,16 @@ async def get_series_without_min_crash_point(request: web.Request) -> web.Respon
                     series['start_time'] = series['start_time'].isoformat()
                     series['end_time'] = series['end_time'].isoformat()
 
+                # Convert time values in follow_streak.games
+                if 'follow_streak' in series and 'games' in series['follow_streak']:
+                    for game in series['follow_streak']['games']:
+                        if 'time' in game:
+                            if timezone_name:
+                                game['time'] = convert_datetime_to_timezone(
+                                    game['time'], timezone_name)
+                            else:
+                                game['time'] = game['time'].isoformat()
+
             return json_response({
                 'status': 'success',
                 'data': result
@@ -1094,6 +1104,16 @@ async def get_series_without_min_crash_point_by_time(request: web.Request) -> we
                     # If no timezone provided, just convert to ISO format string
                     series['start_time'] = series['start_time'].isoformat()
                     series['end_time'] = series['end_time'].isoformat()
+
+                # Convert time values in follow_streak.games
+                if 'follow_streak' in series and 'games' in series['follow_streak']:
+                    for game in series['follow_streak']['games']:
+                        if 'time' in game:
+                            if timezone_name:
+                                game['time'] = convert_datetime_to_timezone(
+                                    game['time'], timezone_name)
+                            else:
+                                game['time'] = game['time'].isoformat()
 
             return json_response({
                 'status': 'success',
