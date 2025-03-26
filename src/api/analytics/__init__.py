@@ -1,5 +1,5 @@
 """
-Analytics package for BC Game Crash Monitor.
+Analytics package for Crash Monitor.
 
 This package contains all the analytical functions for processing game data.
 """
@@ -8,9 +8,13 @@ This package contains all the analytical functions for processing game data.
 from .last_games import (
     get_last_game_min_crash_point,
     get_last_game_max_crash_point,
+    get_last_game_exact_floor,
     get_last_min_crash_point_games,
     get_last_max_crash_point_games,
-    get_last_exact_floor_games
+    get_last_exact_floor_games,
+    get_last_games_min_crash_points,
+    get_last_games_max_crash_points,
+    get_last_games_exact_floors
 )
 
 from .occurrences import (
@@ -45,9 +49,13 @@ __all__ = [
     # Last games analytics
     'get_last_game_min_crash_point',
     'get_last_game_max_crash_point',
+    'get_last_game_exact_floor',
     'get_last_min_crash_point_games',
     'get_last_max_crash_point_games',
     'get_last_exact_floor_games',
+    'get_last_games_min_crash_points',
+    'get_last_games_max_crash_points',
+    'get_last_games_exact_floors',
 
     # Occurrences analytics
     'get_min_crash_point_occurrences_by_games',

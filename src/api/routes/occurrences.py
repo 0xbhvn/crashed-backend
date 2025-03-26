@@ -1,5 +1,5 @@
 """
-Occurrence API routes for BC Game Crash Monitor.
+Occurrence API routes for Crash Monitor.
 
 This module defines API endpoints for analyzing the frequency of games
 meeting various crash point criteria.
@@ -80,16 +80,17 @@ async def get_min_crash_point_occurrences(request: web.Request) -> web.Response:
                     status=400
                 )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_min_crash_point_occurrences_by_time,
                     value, hours
                 )
             else:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_min_crash_point_occurrences_by_games,
                     value, games
                 )
@@ -185,16 +186,17 @@ async def get_max_crash_point_occurrences(request: web.Request) -> web.Response:
                     status=400
                 )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_max_crash_point_occurrences_by_time,
                     value, hours
                 )
             else:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_max_crash_point_occurrences_by_games,
                     value, games
                 )
@@ -295,16 +297,17 @@ async def get_exact_floor_occurrences(request: web.Request) -> web.Response:
                     status=400
                 )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_exact_floor_occurrences_by_time,
                     value, hours
                 )
             else:
-                data = await session.run_sync(
+                data = await db.run_sync(
                     occurrences.get_exact_floor_occurrences_by_games,
                     value, games
                 )
@@ -425,16 +428,17 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
                 )
             hours = None
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_min_crash_point_occurrences_by_time_batch,
                     values, hours, comparison
                 )
             else:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_min_crash_point_occurrences_by_games_batch,
                     values, games, comparison
                 )
@@ -575,16 +579,17 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
                 )
             hours = None
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_exact_floor_occurrences_by_time_batch,
                     values, hours, comparison
                 )
             else:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_exact_floor_occurrences_by_games_batch,
                     values, games, comparison
                 )
@@ -719,16 +724,17 @@ async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Res
                 )
             hours = None
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get occurrence data
             if by_time:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_max_crash_point_occurrences_by_time_batch,
                     values, hours, comparison
                 )
             else:
-                results = await session.run_sync(
+                results = await db.run_sync(
                     occurrences.get_max_crash_point_occurrences_by_games_batch,
                     values, games, comparison
                 )

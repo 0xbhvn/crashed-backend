@@ -1,5 +1,5 @@
 """
-Last game API routes for BC Game Crash Monitor.
+Last game API routes for Crash Monitor.
 
 This module defines API endpoints for fetching information about the most
 recent games that match specific criteria.
@@ -407,4 +407,209 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
 
     except Exception as e:
         logger.error(f"Error in get_last_games_max_crash_points: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/last-games/min-crash-point/{value}')
+async def get_last_min_crash_point_games_handler(request: web.Request) -> web.Response:
+    """
+    Get a list of the most recent games with crash points >= the specified value.
+
+    Path parameters:
+        value (float): Minimum crash point value
+
+    Query parameters:
+        limit (int, optional): Maximum number of games to return (default: 10)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+
+    Returns:
+        JSON response containing a list of games matching the criteria
+    """
+    try:
+        # Get value from path parameter and convert to float
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get limit from query parameters
+        try:
+            limit = int(request.query.get('limit', '10'))
+            if limit <= 0:
+                return error_response("Limit must be a positive integer.", status=400)
+        except ValueError:
+            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the games
+        with db.get_session() as session:
+            games = analytics.get_last_min_crash_point_games(
+                session, value, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for game in games:
+                    game['endTime'] = convert_datetime_to_timezone(
+                        game['endTime'], timezone_name)
+                    game['prepareTime'] = convert_datetime_to_timezone(
+                        game['prepareTime'], timezone_name)
+                    game['beginTime'] = convert_datetime_to_timezone(
+                        game['beginTime'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {
+                    'min_value': value,
+                    'limit': limit,
+                    'count': len(games),
+                    'games': games
+                }
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_last_min_crash_point_games_handler: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/last-games/max-crash-point/{value}')
+async def get_last_max_crash_point_games_handler(request: web.Request) -> web.Response:
+    """
+    Get a list of the most recent games with crash points <= the specified value.
+
+    Path parameters:
+        value (float): Maximum crash point value
+
+    Query parameters:
+        limit (int, optional): Maximum number of games to return (default: 10)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+
+    Returns:
+        JSON response containing a list of games matching the criteria
+    """
+    try:
+        # Get value from path parameter and convert to float
+        try:
+            value = float(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be a number.", status=400)
+
+        # Get limit from query parameters
+        try:
+            limit = int(request.query.get('limit', '10'))
+            if limit <= 0:
+                return error_response("Limit must be a positive integer.", status=400)
+        except ValueError:
+            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the games
+        with db.get_session() as session:
+            games = analytics.get_last_max_crash_point_games(
+                session, value, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for game in games:
+                    game['endTime'] = convert_datetime_to_timezone(
+                        game['endTime'], timezone_name)
+                    game['prepareTime'] = convert_datetime_to_timezone(
+                        game['prepareTime'], timezone_name)
+                    game['beginTime'] = convert_datetime_to_timezone(
+                        game['beginTime'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {
+                    'max_value': value,
+                    'limit': limit,
+                    'count': len(games),
+                    'games': games
+                }
+            })
+
+    except Exception as e:
+        logger.error(
+            f"Error in get_last_max_crash_point_games_handler: {str(e)}")
+        return error_response("Internal server error", status=500)
+
+
+@routes.get('/api/analytics/last-games/exact-floor/{value}')
+async def get_last_exact_floor_games_handler(request: web.Request) -> web.Response:
+    """
+    Get a list of the most recent games with crash point floor exactly matching the specified value.
+
+    Path parameters:
+        value (int): Exact floor value
+
+    Query parameters:
+        limit (int, optional): Maximum number of games to return (default: 10)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+
+    Returns:
+        JSON response containing a list of games matching the criteria
+    """
+    try:
+        # Get value from path parameter and convert to int
+        try:
+            value = int(request.match_info['value'])
+        except ValueError:
+            return error_response("Invalid value parameter. Must be an integer.", status=400)
+
+        # Get limit from query parameters
+        try:
+            limit = int(request.query.get('limit', '10'))
+            if limit <= 0:
+                return error_response("Limit must be a positive integer.", status=400)
+        except ValueError:
+            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+
+        # Get timezone from header (if provided)
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Get database from app
+        db: Database = request.app['db']
+
+        # Query the games
+        with db.get_session() as session:
+            games = analytics.get_last_exact_floor_games(session, value, limit)
+
+            # Convert datetime values to specified timezone if provided
+            if timezone_name:
+                for game in games:
+                    game['endTime'] = convert_datetime_to_timezone(
+                        game['endTime'], timezone_name)
+                    game['prepareTime'] = convert_datetime_to_timezone(
+                        game['prepareTime'], timezone_name)
+                    game['beginTime'] = convert_datetime_to_timezone(
+                        game['beginTime'], timezone_name)
+
+            return json_response({
+                'status': 'success',
+                'data': {
+                    'floor_value': value,
+                    'limit': limit,
+                    'count': len(games),
+                    'games': games
+                }
+            })
+
+    except Exception as e:
+        logger.error(f"Error in get_last_exact_floor_games_handler: {str(e)}")
         return error_response("Internal server error", status=500)

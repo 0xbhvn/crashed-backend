@@ -16,6 +16,93 @@ from ...db.models import CrashGame
 logger = logging.getLogger(__name__)
 
 
+def get_last_min_crash_point_games(session: Session, min_value: float, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get the most recent games with crash points greater than or equal to the specified value.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point value to filter by
+        limit: Maximum number of games to return (default: 10)
+
+    Returns:
+        List of dictionaries containing game data for matching games
+    """
+    try:
+        # Query the most recent games with crash point >= min_value
+        games = session.query(CrashGame)\
+            .filter(CrashGame.crashPoint >= min_value)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .all()
+
+        # Convert games to dictionaries
+        return [game.to_dict() for game in games]
+
+    except Exception as e:
+        logger.error(
+            f"Error getting last games with min crash point {min_value}: {str(e)}")
+        raise
+
+
+def get_last_max_crash_point_games(session: Session, max_value: float, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get the most recent games with crash points less than or equal to the specified value.
+
+    Args:
+        session: SQLAlchemy session
+        max_value: Maximum crash point value to filter by
+        limit: Maximum number of games to return (default: 10)
+
+    Returns:
+        List of dictionaries containing game data for matching games
+    """
+    try:
+        # Query the most recent games with crash point <= max_value
+        games = session.query(CrashGame)\
+            .filter(CrashGame.crashPoint <= max_value)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .all()
+
+        # Convert games to dictionaries
+        return [game.to_dict() for game in games]
+
+    except Exception as e:
+        logger.error(
+            f"Error getting last games with max crash point {max_value}: {str(e)}")
+        raise
+
+
+def get_last_exact_floor_games(session: Session, floor_value: int, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get the most recent games with crash point floor exactly matching the specified value.
+
+    Args:
+        session: SQLAlchemy session
+        floor_value: Exact floor value to filter by
+        limit: Maximum number of games to return (default: 10)
+
+    Returns:
+        List of dictionaries containing game data for matching games
+    """
+    try:
+        # Query the most recent games with floor matching exactly
+        games = session.query(CrashGame)\
+            .filter(CrashGame.crashedFloor == floor_value)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(limit)\
+            .all()
+
+        # Convert games to dictionaries
+        return [game.to_dict() for game in games]
+
+    except Exception as e:
+        logger.error(
+            f"Error getting last games with exact floor {floor_value}: {str(e)}")
+        raise
+
+
 def get_last_game_min_crash_point(session: Session, min_value: float) -> Optional[Tuple[Dict[str, Any], int]]:
     """
     Get the most recent game with a crash point greater than or equal to the specified value.

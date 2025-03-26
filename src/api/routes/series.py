@@ -1,5 +1,5 @@
 """
-Series API routes for BC Game Crash Monitor.
+Series API routes for Crash Monitor.
 
 This module defines API endpoints for fetching series of games without
 crash points above certain thresholds.
@@ -68,10 +68,11 @@ async def get_series_without_min_crash_point(request: web.Request) -> web.Respon
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get series data
-            series_list = await session.run_sync(
+            series_list = await db.run_sync(
                 analytics.get_series_without_min_crash_point_by_games,
                 value, limit, sort_by
             )
@@ -158,10 +159,11 @@ async def get_series_without_min_crash_point_by_time(request: web.Request) -> we
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get series data
-            series_list = await session.run_sync(
+            series_list = await db.run_sync(
                 analytics.get_series_without_min_crash_point_by_time,
                 value, hours, sort_by
             )

@@ -61,6 +61,61 @@ class Database:
         """
         return self.Session()
 
+    # Add synchronous context manager support
+    def __enter__(self):
+        """
+        Enter the synchronous context manager.
+
+        Returns:
+            sqlalchemy.orm.Session: Database session
+        """
+        self.session = self.get_session()
+        return self.session
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the synchronous context manager.
+        """
+        if self.session:
+            if exc_type is not None:
+                self.session.rollback()
+            self.session.close()
+
+    # Add asynchronous context manager support
+    async def __aenter__(self):
+        """
+        Enter the asynchronous context manager.
+
+        Returns:
+            sqlalchemy.orm.Session: Database session
+        """
+        self.session = self.get_session()
+        return self.session
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the asynchronous context manager.
+        """
+        if self.session:
+            if exc_type is not None:
+                self.session.rollback()
+            self.session.close()
+
+    # Add a method to run synchronous functions in async context
+    async def run_sync(self, func, *args, **kwargs):
+        """
+        Run a synchronous function with database session.
+
+        Args:
+            func: The function to run
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Any: The result of the function
+        """
+        return func(self.session, *args, **kwargs)
+
     def create_tables(self):
         """
         Create database tables if they don't exist.

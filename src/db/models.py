@@ -1,8 +1,8 @@
 """
-SQLAlchemy models for BC Game Crash Monitor.
+SQLAlchemy models for Crash Monitor.
 
 This module defines the database models used by the application, specifically
-the CrashGame model for storing game results from BC Game.
+the CrashGame model for storing game results from Crash.
 """
 
 from sqlalchemy import Column, Integer, String, Float, DateTime, Index
@@ -49,14 +49,14 @@ class CrashGame(Base):
     )
 
     def to_dict(self):
-        """Convert model instance to dictionary."""
+        """Convert model instance to dictionary with ISO formatted datetime strings."""
         return {
             'gameId': self.gameId,
             'hashValue': self.hashValue,
-            'crashPoint': self.crashPoint,
-            'calculatedPoint': self.calculatedPoint,
-            'crashedFloor': self.crashedFloor,
-            'endTime': self.endTime,
-            'prepareTime': self.prepareTime,
-            'beginTime': self.beginTime
+            'crashPoint': float(self.crashPoint) if self.crashPoint is not None else None,
+            'calculatedPoint': float(self.calculatedPoint) if self.calculatedPoint is not None else None,
+            'crashedFloor': int(self.crashedFloor) if self.crashedFloor is not None else None,
+            'endTime': self.endTime.isoformat() if self.endTime is not None else None,
+            'prepareTime': self.prepareTime.isoformat() if self.prepareTime is not None else None,
+            'beginTime': self.beginTime.isoformat() if self.beginTime is not None else None
         }

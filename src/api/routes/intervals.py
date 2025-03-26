@@ -1,5 +1,5 @@
 """
-Interval API routes for BC Game Crash Monitor.
+Interval API routes for Crash Monitor.
 
 This module defines API endpoints for analyzing game data in intervals
 to identify patterns and occurrences.
@@ -74,10 +74,11 @@ async def get_min_crash_point_intervals(request: web.Request) -> web.Response:
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get interval data
-            intervals = await session.run_sync(
+            intervals = await db.run_sync(
                 analytics.get_min_crash_point_intervals_by_time,
                 value, interval_minutes, hours
             )
@@ -163,10 +164,11 @@ async def get_min_crash_point_intervals_by_sets(request: web.Request) -> web.Res
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get interval data
-            intervals = await session.run_sync(
+            intervals = await db.run_sync(
                 analytics.get_min_crash_point_intervals_by_game_sets,
                 value, games_per_set, total_games
             )
@@ -276,10 +278,11 @@ async def get_min_crash_point_intervals_batch(request: web.Request) -> web.Respo
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get interval data
-            intervals_by_value = await session.run_sync(
+            intervals_by_value = await db.run_sync(
                 analytics.get_min_crash_point_intervals_by_time_batch,
                 values, interval_minutes, hours
             )
@@ -389,10 +392,11 @@ async def get_min_crash_point_intervals_by_sets_batch(request: web.Request) -> w
                 status=400
             )
 
-        # Get database session
-        async with Database() as session:
+        # Get database and session
+        db = Database()
+        async with db as session:
             # Get interval data
-            intervals_by_value = await session.run_sync(
+            intervals_by_value = await db.run_sync(
                 analytics.get_min_crash_point_intervals_by_game_sets_batch,
                 values, games_per_set, total_games
             )
