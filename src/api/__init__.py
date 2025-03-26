@@ -1,5 +1,5 @@
 """
-API package for BC Game Crash Monitor.
+API package for Crash Monitor.
 
 This package provides the HTTP API and WebSocket access to the crash data.
 """

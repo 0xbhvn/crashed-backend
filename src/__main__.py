@@ -10,11 +10,11 @@ from .app import main
 
 if __name__ == "__main__":
     try:
-        # Run the BC Game Crash Monitor
+        # Run the Crash Monitor
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nBC Game Crash Monitor stopped by user")
+        print("\nCrash Monitor stopped by user")
         sys.exit(0)
     except Exception as e:
-        print(f"Error running BC Game Crash Monitor: {e}")
+        print(f"Error running Crash Monitor: {e}")
         sys.exit(1)

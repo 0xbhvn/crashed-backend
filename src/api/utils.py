@@ -1,5 +1,5 @@
 """
-Utility functions for the BC Game Crash Monitor API.
+Utility functions for the Crash Monitor API.
 
 This module provides helper functions for the API.
 """

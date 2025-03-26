@@ -1,5 +1,5 @@
 """
-Database module for BC Game Crash Monitor.
+Database module for Crash Monitor.
 
 This module provides database functionality for storing and retrieving crash games.
 It also includes migration utilities for managing database schema changes.

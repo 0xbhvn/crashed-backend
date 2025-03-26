@@ -1,5 +1,5 @@
 """
-Unified entry point for the BC Game Crash Monitor application.
+Unified entry point for the Crash Monitor application.
 
 This module serves as the main entry point for the application,
 initializing components and running the monitor.
@@ -24,7 +24,7 @@ from .db import get_database, CrashGame, create_migration, upgrade_database, dow
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
-        description="BC Game Crash Monitor - A tool for monitoring BC Game's crash game"
+        description="Crash Monitor - A tool for monitoring Crash game"
     )
 
     # Create subparsers for different commands
@@ -122,7 +122,7 @@ def parse_arguments():
 
 async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) -> None:
     """
-    Run the BC Game Crash Monitor
+    Run the Crash Monitor
 
     Args:
         skip_catchup: Whether to skip the catchup process
@@ -217,12 +217,12 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     monitor.register_game_callback(log_game)
 
     # Start the monitor (run forever)
-    logger.info("Starting BC Game Crash Monitor")
+    logger.info("Starting Crash Monitor")
     await monitor.run()
 
     # Cleanup on exit
     await api_runner.cleanup()
-    logger.info("BC Game Crash Monitor stopped")
+    logger.info("Crash Monitor stopped")
 
 
 async def run_catchup(pages: int = 20, batch_size: int = 20,
@@ -523,10 +523,10 @@ def main_cli() -> None:
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nBC Game Crash Monitor stopped by user")
+        print("\nCrash Monitor stopped by user")
         sys.exit(0)
     except Exception as e:
-        print(f"Error running BC Game Crash Monitor: {e}")
+        print(f"Error running Crash Monitor: {e}")
         sys.exit(1)
 
 
@@ -534,8 +534,8 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nBC Game Crash Monitor stopped by user")
+        print("\nCrash Monitor stopped by user")
         sys.exit(0)
     except Exception as e:
-        print(f"Error running BC Game Crash Monitor: {e}")
+        print(f"Error running Crash Monitor: {e}")
         sys.exit(1)

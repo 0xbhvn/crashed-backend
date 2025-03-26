@@ -1,5 +1,5 @@
 """
-Game API routes for BC Game Crash Monitor.
+Game API routes for Crash Monitor.
 
 This module defines API endpoints for fetching crash game data.
 """

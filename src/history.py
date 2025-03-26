@@ -1,8 +1,8 @@
 """
-BC Game Crash Monitor - History Module
+Crash Monitor - History Module
 
 This module contains the main BCCrashMonitor class that handles
-fetching and processing crash game data from the BC Game API.
+fetching and processing crash game data from the Crash API.
 """
 
 import json
@@ -99,7 +99,7 @@ class BCCrashMonitor:
 
     @staticmethod
     def calculate_crash_point(seed, salt=None):
-        """Calculate crash point using the BC Game algorithm"""
+        """Calculate crash point using the Crash algorithm"""
         # Use default salt from config if none is provided
         if salt is None:
             salt = config.BC_GAME_SALT
@@ -116,7 +116,7 @@ class BCCrashMonitor:
             r = int(h, 16)
             X = r / (2**52)
 
-            # Apply the BC Game crash point formula
+            # Apply the Crash point formula
             X = 99 / (1 - X)
 
             # Floor and divide by 100
@@ -129,7 +129,7 @@ class BCCrashMonitor:
             return 1.00
 
     async def fetch_crash_history(self):
-        """Fetch crash game history from the BC Game API using the utility function"""
+        """Fetch crash game history from the Crash API using the utility function"""
         self.logger.debug("Fetching crash history from API...")
 
         try:
@@ -275,7 +275,7 @@ class BCCrashMonitor:
     async def run(self):
         """Run the monitor loop"""
         self.logger.info(
-            f"Starting BC Game Crash Monitor with polling interval {self.polling_interval}s")
+            f"Starting Crash Monitor with polling interval {self.polling_interval}s")
 
         while True:
             try:

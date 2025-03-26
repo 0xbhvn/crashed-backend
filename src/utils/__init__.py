@@ -1,5 +1,5 @@
 """
-Utility modules for BC Game Crash Monitor.
+Utility modules for Crash Monitor.
 
 This package contains utility functions and classes used throughout the application.
 """

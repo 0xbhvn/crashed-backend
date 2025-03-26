@@ -1,7 +1,7 @@
 """
-BC Game Crash Monitor Package
+Crash Monitor Package
 
-This package provides modules for monitoring BC Game's crash game,
+This package provides modules for monitoring Crash game,
 calculating crash values, and storing results in a database.
 
 Modules:

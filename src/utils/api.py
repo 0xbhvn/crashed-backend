@@ -1,7 +1,7 @@
 """
-API utilities for BC Game Crash Monitor.
+API utilities for Crash Monitor.
 
-This module provides functions for interacting with the BC Game API,
+This module provides functions for interacting with the Crash API,
 including fetching game history and processing game data.
 """
 
@@ -27,7 +27,7 @@ class APIError(Exception):
 
 async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str = None) -> Dict[str, Any]:
     """
-    Fetch game history from the BC Game API.
+    Fetch game history from the Crash API.
 
     Args:
         page: Page number to fetch

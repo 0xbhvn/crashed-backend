@@ -154,7 +154,7 @@ def import_data(input_file='crash_games_export.json', target_db_url=None):
 def main():
     """Main entry point for the script"""
     parser = argparse.ArgumentParser(
-        description='Export/Import BC Game crash data')
+        description='Export/Import Crash data')
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
 
     # Export command

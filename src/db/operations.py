@@ -1,5 +1,5 @@
 """
-Database operations for BC Game Crash Monitor.
+Database operations for Crash Monitor.
 
 This module provides high-level database operations for storing and retrieving
 crash game data. It builds on the core database engine to provide convenient

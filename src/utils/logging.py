@@ -1,5 +1,5 @@
 """
-Logging utilities for BC Game Crash Monitor.
+Logging utilities for Crash Monitor.
 
 This module provides standardized logging configuration for all components.
 """

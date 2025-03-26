@@ -1,5 +1,5 @@
 """
-Database migration utility for BC Game Crash Monitor.
+Database migration utility for Crash Monitor.
 
 This module provides functions to run database migrations using Alembic.
 It can be used to update the database schema when the models change.

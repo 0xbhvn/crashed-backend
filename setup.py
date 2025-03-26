@@ -12,7 +12,7 @@ setup(
     version="0.2.0",
     author="Bhaven",
     author_email="thisisbhaven@gmail.com",
-    description="A Python application for monitoring BC Game's crash game",
+    description="A Python application for monitoring Crash game",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/0xbhvn/bc-game-crash-monitor",

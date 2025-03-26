@@ -1,5 +1,5 @@
 """
-WebSocket handling for BC Game Crash Monitor.
+WebSocket handling for Crash Monitor.
 
 This module provides real-time updates to connected clients when new games are added.
 """
@@ -57,7 +57,7 @@ class WebSocketManager:
             # Send connection confirmation message
             await ws.send_json({
                 "type": "connection_established",
-                "message": "Connected to BC Game Crash Monitor WebSocket"
+                "message": "Connected to Crash Monitor WebSocket"
             })
 
             # Listen for messages from client

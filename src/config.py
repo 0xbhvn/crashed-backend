@@ -1,5 +1,5 @@
 """
-Configuration module for BC Game Crash Monitor.
+Configuration module for Crash Monitor.
 
 This module centralizes all configuration values and provides defaults.
 It leverages the utils.env module for loading environment variables.
@@ -19,7 +19,7 @@ except ImportError:
         """Get environment variable with fallback default"""
         return os.environ.get(key, default)
 
-# BC Game API configuration
+# Crash API configuration
 API_BASE_URL = "https://bc.game"
 API_HISTORY_ENDPOINT = "/api/game/bet/multi/history"
 GAME_URL = "crash"  # Game URL path for crash game
@@ -73,7 +73,7 @@ CATCHUP_BATCH_SIZE = int(get_env_var('CATCHUP_BATCH_SIZE', '10'))
 TIMEZONE = get_env_var('TIMEZONE', 'UTC')
 
 # Application settings
-APP_NAME = get_env_var('APP_NAME', 'BC Game Crash Monitor')
+APP_NAME = get_env_var('APP_NAME', 'Crash Monitor')
 APP_VERSION = get_env_var('APP_VERSION', '0.2.0')
 
 
@@ -183,7 +183,7 @@ def reload_config():
     TIMEZONE = get_env_var('TIMEZONE', 'UTC')
 
     # Application settings
-    APP_NAME = get_env_var('APP_NAME', 'BC Game Crash Monitor')
+    APP_NAME = get_env_var('APP_NAME', 'Crash Monitor')
     APP_VERSION = get_env_var('APP_VERSION', '0.2.0')
 
     # Log that config was reloaded
