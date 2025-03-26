@@ -11,6 +11,7 @@ import aiohttp
 from aiohttp import web
 from datetime import datetime
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
 
@@ -164,16 +165,16 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return await manager.handle_connection(request)
 
 
-def setup_websocket_routes(app: web.Application) -> None:
+def setup_websocket(app: web.Application) -> None:
     """
     Setup WebSocket routes for the application.
 
     Args:
-        app: The aiohttp application.
+        app: The web application instance.
     """
     app.router.add_get('/ws', websocket_handler)
 
     # Store the manager in the app for access elsewhere
     app['websocket_manager'] = manager
 
-    logger.info("WebSocket routes configured")
+    logger.info("WebSocket configured")
