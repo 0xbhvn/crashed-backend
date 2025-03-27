@@ -9,8 +9,9 @@ import logging
 import json
 from typing import Dict, Any
 from aiohttp import web
+from datetime import datetime
 
-from ..utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER
+from ..utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER, parse_datetime
 from ...db.engine import Database
 from .. import analytics
 
@@ -108,6 +109,124 @@ async def get_min_crash_point_intervals(request: web.Request) -> web.Response:
     except Exception as e:
         logger.exception(
             f"Error in get_min_crash_point_intervals: {str(e)}")
+        return error_response(f"An error occurred: {str(e)}")
+
+
+@routes.get('/api/analytics/intervals/min-crash-point/{value}/date-range')
+async def get_min_crash_point_intervals_by_date_range(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash point in time intervals between two dates.
+
+    Path parameters:
+        value (float): Minimum crash point threshold
+
+    Query parameters:
+        start_date (str): Start date in ISO format (YYYY-MM-DD)
+        end_date (str): End date in ISO format (YYYY-MM-DD)
+        interval_minutes (int, optional): Size of each interval in minutes (default: 10)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get minimum crash point value from the path parameter
+        value_str = request.match_info['value']
+        try:
+            value = float(value_str)
+        except ValueError:
+            return error_response(
+                f"Invalid crash point value: {value_str}. Must be a numeric value.",
+                status=400
+            )
+
+        # Get query parameters
+        start_date_str = request.query.get('start_date')
+        if not start_date_str:
+            return error_response(
+                "Missing required parameter: 'start_date'.",
+                status=400
+            )
+
+        end_date_str = request.query.get('end_date')
+        if not end_date_str:
+            return error_response(
+                "Missing required parameter: 'end_date'.",
+                status=400
+            )
+
+        # Get timezone from request header for parsing dates
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Parse dates
+        try:
+            start_date = parse_datetime(start_date_str, timezone_name)
+        except ValueError:
+            return error_response(
+                f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD).",
+                status=400
+            )
+
+        try:
+            end_date = parse_datetime(end_date_str, timezone_name)
+        except ValueError:
+            return error_response(
+                f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD).",
+                status=400
+            )
+
+        # Validate the date range
+        if end_date < start_date:
+            return error_response(
+                f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str}).",
+                status=400
+            )
+
+        # Get interval_minutes parameter
+        try:
+            interval_minutes = int(request.query.get('interval_minutes', '10'))
+            if interval_minutes <= 0:
+                return error_response(
+                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
+                    status=400
+                )
+        except ValueError:
+            return error_response(
+                f"Invalid interval_minutes: {request.query.get('interval_minutes')}. Must be a positive integer.",
+                status=400
+            )
+
+        # Get database and session
+        db = Database()
+        async with db as session:
+            # Get interval data
+            intervals = await db.run_sync(
+                analytics.get_min_crash_point_intervals_by_date_range,
+                value, start_date, end_date, interval_minutes
+            )
+
+            # Convert datetime values to the requested timezone
+            for interval in intervals:
+                interval['interval_start'] = convert_datetime_to_timezone(
+                    interval['interval_start'], timezone_name)
+                interval['interval_end'] = convert_datetime_to_timezone(
+                    interval['interval_end'], timezone_name)
+
+            # Return the response
+            return json_response({
+                'status': 'success',
+                'data': {
+                    'min_value': value,
+                    'start_date': convert_datetime_to_timezone(start_date, timezone_name),
+                    'end_date': convert_datetime_to_timezone(end_date, timezone_name),
+                    'interval_minutes': interval_minutes,
+                    'count': len(intervals),
+                    'intervals': intervals
+                }
+            })
+
+    except Exception as e:
+        logger.exception(
+            f"Error in get_min_crash_point_intervals_by_date_range: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
 
 
@@ -312,6 +431,145 @@ async def get_min_crash_point_intervals_batch(request: web.Request) -> web.Respo
     except Exception as e:
         logger.exception(
             f"Error in get_min_crash_point_intervals_batch: {str(e)}")
+        return error_response(f"An error occurred: {str(e)}")
+
+
+@routes.post('/api/analytics/intervals/min-crash-points/date-range')
+async def get_min_crash_point_intervals_by_date_range_batch(request: web.Request) -> web.Response:
+    """
+    Get occurrences of >= X crash points in time intervals between two dates.
+
+    Request Body:
+        values (List[float]): List of minimum crash point thresholds
+        start_date (str): Start date in ISO format (YYYY-MM-DD)
+        end_date (str): End date in ISO format (YYYY-MM-DD)
+        interval_minutes (int, optional): Size of each interval in minutes (default: 10)
+
+    Headers:
+        X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
+    """
+    try:
+        # Get request data
+        try:
+            data = await request.json()
+        except json.JSONDecodeError:
+            return error_response(
+                "Invalid JSON in request body.",
+                status=400
+            )
+
+        # Validate required fields
+        if 'values' not in data:
+            return error_response(
+                "Missing required field: 'values'.",
+                status=400
+            )
+
+        values = data['values']
+        if not isinstance(values, list) or not values:
+            return error_response(
+                "Field 'values' must be a non-empty list of float values.",
+                status=400
+            )
+
+        # Validate and convert values to floats
+        try:
+            values = [float(v) for v in values]
+        except (ValueError, TypeError):
+            return error_response(
+                "Field 'values' must contain numeric values.",
+                status=400
+            )
+
+        # Get required date parameters
+        start_date_str = data.get('start_date')
+        if not start_date_str:
+            return error_response(
+                "Missing required field: 'start_date'.",
+                status=400
+            )
+
+        end_date_str = data.get('end_date')
+        if not end_date_str:
+            return error_response(
+                "Missing required field: 'end_date'.",
+                status=400
+            )
+
+        # Get timezone from request header for parsing dates
+        timezone_name = request.headers.get(TIMEZONE_HEADER)
+
+        # Parse dates
+        try:
+            start_date = parse_datetime(start_date_str, timezone_name)
+        except ValueError:
+            return error_response(
+                f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD).",
+                status=400
+            )
+
+        try:
+            end_date = parse_datetime(end_date_str, timezone_name)
+        except ValueError:
+            return error_response(
+                f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD).",
+                status=400
+            )
+
+        # Validate the date range
+        if end_date < start_date:
+            return error_response(
+                f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str}).",
+                status=400
+            )
+
+        # Get interval_minutes parameter
+        interval_minutes = data.get('interval_minutes', 10)
+        try:
+            interval_minutes = int(interval_minutes)
+            if interval_minutes <= 0:
+                return error_response(
+                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
+                    status=400
+                )
+        except (ValueError, TypeError):
+            return error_response(
+                f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
+                status=400
+            )
+
+        # Get database and session
+        db = Database()
+        async with db as session:
+            # Get interval data
+            intervals_by_value = await db.run_sync(
+                analytics.get_min_crash_point_intervals_by_date_range_batch,
+                values, start_date, end_date, interval_minutes
+            )
+
+            # Convert datetime values to the requested timezone
+            for value, intervals in intervals_by_value.items():
+                for interval in intervals:
+                    interval['interval_start'] = convert_datetime_to_timezone(
+                        interval['interval_start'], timezone_name)
+                    interval['interval_end'] = convert_datetime_to_timezone(
+                        interval['interval_end'], timezone_name)
+
+            # Return the response
+            return json_response({
+                'status': 'success',
+                'data': {
+                    'values': values,
+                    'start_date': convert_datetime_to_timezone(start_date, timezone_name),
+                    'end_date': convert_datetime_to_timezone(end_date, timezone_name),
+                    'interval_minutes': interval_minutes,
+                    'intervals_by_value': intervals_by_value
+                }
+            })
+
+    except Exception as e:
+        logger.exception(
+            f"Error in get_min_crash_point_intervals_by_date_range_batch: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
 
 

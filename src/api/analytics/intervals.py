@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Any
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, and_
 
 from ...db.models import CrashGame
 
@@ -112,6 +112,112 @@ def get_min_crash_point_intervals_by_time(
         raise
 
 
+def get_min_crash_point_intervals_by_date_range(
+    session: Session,
+    min_value: float,
+    start_date: datetime,
+    end_date: datetime,
+    interval_minutes: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Count occurrences of crash points >= specified value in time intervals between two dates.
+
+    Args:
+        session: SQLAlchemy session
+        min_value: Minimum crash point threshold
+        start_date: Start date for analysis (inclusive)
+        end_date: End date for analysis (inclusive)
+        interval_minutes: Size of each interval in minutes (default: 10)
+
+    Returns:
+        List of dictionaries containing interval data, each with:
+        - interval_start: Start time of the interval
+        - interval_end: End time of the interval
+        - count: Number of occurrences in this interval
+        - total_games: Total games in this interval
+        - percentage: Percentage of games with crash point >= min_value
+    """
+    try:
+        logger.info(f"Starting interval analysis by date range: min_value={min_value}, "
+                    f"start_date={start_date}, end_date={end_date}, interval_minutes={interval_minutes}")
+
+        # Limit the date range to a maximum of 7 days to prevent excessive processing
+        date_range_days = (end_date - start_date).days
+        if date_range_days > 7:
+            logger.warning(
+                f"Date range too large ({date_range_days} days). Limiting to 7 days.")
+            end_date = start_date + timedelta(days=7)
+
+        # Normalize start date to beginning of day
+        normalized_start_date = start_date.replace(
+            hour=0, minute=0, second=0, microsecond=0)
+
+        # Normalize end date to end of day
+        normalized_end_date = end_date.replace(
+            hour=23, minute=59, second=59, microsecond=999999)
+
+        logger.info(
+            f"Normalized date range: {normalized_start_date} to {normalized_end_date}")
+
+        # Calculate interval boundaries
+        interval_delta = timedelta(minutes=interval_minutes)
+
+        # Get all games in the date range with a single query
+        games = session.query(CrashGame)\
+            .filter(CrashGame.endTime >= normalized_start_date)\
+            .filter(CrashGame.endTime <= normalized_end_date)\
+            .order_by(CrashGame.endTime)\
+            .all()
+
+        logger.info(f"Retrieved {len(games)} games from the database")
+
+        # Process all intervals with in-memory data
+        intervals = []
+        current_interval_start = normalized_start_date
+
+        while current_interval_start <= normalized_end_date:
+            current_interval_end = current_interval_start + interval_delta
+
+            # Filter games in this interval using Python instead of database queries
+            interval_games = [
+                g for g in games
+                if current_interval_start <= g.endTime < current_interval_end
+            ]
+
+            total_games = len(interval_games)
+
+            # Only include intervals that have games
+            if total_games > 0:
+                # Count games with crash point >= min_value
+                matching_games = len(
+                    [g for g in interval_games if g.crashPoint >= min_value]
+                )
+
+                percentage = (matching_games / total_games) * 100
+
+                intervals.append({
+                    'interval_start': current_interval_start,
+                    'interval_end': current_interval_end,
+                    'count': matching_games,
+                    'total_games': total_games,
+                    'percentage': percentage
+                })
+
+            current_interval_start = current_interval_end
+
+            # Progress logging for long operations
+            if len(intervals) % 100 == 0 and len(intervals) > 0:
+                logger.info(f"Processed {len(intervals)} intervals so far")
+
+        logger.info(
+            f"Completed interval analysis: found {len(intervals)} intervals with game data")
+        return intervals
+
+    except Exception as e:
+        logger.error(f"Error analyzing intervals by date range: {str(e)}")
+        raise
+
+
 def get_min_crash_point_intervals_by_game_sets(
     session: Session,
     min_value: float,
@@ -142,30 +248,40 @@ def get_min_crash_point_intervals_by_game_sets(
             .limit(total_games)\
             .all()
 
-        # Reverse to process from oldest to newest
-        games.reverse()
+        # If there are fewer games than expected, adjust total_games
+        if len(games) < total_games:
+            total_games = len(games)
+
+        # Calculate how many complete sets we can make
+        num_sets = total_games // games_per_set
 
         intervals = []
-        total_sets = (len(games) + games_per_set - 1) // games_per_set
 
-        for set_number in range(total_sets):
-            start_idx = set_number * games_per_set
-            end_idx = min(start_idx + games_per_set, len(games))
-            current_set = games[start_idx:end_idx]
+        # Process each complete set
+        for i in range(num_sets):
+            # Get the games for this set
+            start_idx = i * games_per_set
+            end_idx = start_idx + games_per_set
+            set_games = games[start_idx:end_idx]
+
+            # Get the start and end times for this set
+            start_time = set_games[-1].endTime  # Latest game in this set
+            end_time = set_games[0].endTime     # Earliest game in this set
 
             # Count games with crash point >= min_value
             matching_games = len(
-                [g for g in current_set if g.crashPoint >= min_value])
+                [g for g in set_games if g.crashPoint >= min_value])
 
+            percentage = (matching_games / games_per_set) * 100
+
+            # Add the interval data
             intervals.append({
-                'set_number': set_number + 1,  # 1-based set numbering
-                'start_game': current_set[0].gameId,
-                'end_game': current_set[-1].gameId,
+                'set_id': i,
+                'start_time': start_time,
+                'end_time': end_time,
                 'count': matching_games,
-                'total_games': len(current_set),
-                'percentage': (matching_games / len(current_set)) * 100,
-                'start_time': current_set[0].endTime,
-                'end_time': current_set[-1].endTime
+                'total_games': games_per_set,
+                'percentage': percentage
             })
 
         return intervals
@@ -191,17 +307,74 @@ def get_min_crash_point_intervals_by_time_batch(
         hours: Total hours to analyze (default: 24)
 
     Returns:
-        Dictionary mapping each value to a list of interval data
+        Dictionary mapping each value to its corresponding interval data
     """
     try:
-        results = {}
+        # Process each value
+        result = {}
         for value in values:
-            results[value] = get_min_crash_point_intervals_by_time(
+            # Get intervals for this value
+            intervals = get_min_crash_point_intervals_by_time(
                 session, value, interval_minutes, hours)
-        return results
+            # Add to result
+            result[str(value)] = intervals
+
+        return result
 
     except Exception as e:
-        logger.error(f"Error analyzing intervals by time batch: {str(e)}")
+        logger.error(
+            f"Error analyzing intervals by time batch: {str(e)}")
+        raise
+
+
+def get_min_crash_point_intervals_by_date_range_batch(
+    session: Session,
+    values: List[float],
+    start_date: datetime,
+    end_date: datetime,
+    interval_minutes: int = 10
+) -> Dict[float, List[Dict[str, Any]]]:
+    """
+    Count occurrences of crash points >= specified values in time intervals between two dates.
+
+    Args:
+        session: SQLAlchemy session
+        values: List of minimum crash point thresholds
+        start_date: Start date for analysis
+        end_date: End date for analysis
+        interval_minutes: Size of each interval in minutes (default: 10)
+
+    Returns:
+        Dictionary mapping each value to its corresponding interval data
+    """
+    try:
+        logger.info(
+            f"Starting batch interval analysis for {len(values)} values")
+
+        # Limit the date range to a maximum of 7 days to prevent excessive processing
+        date_range_days = (end_date - start_date).days
+        if date_range_days > 7:
+            logger.warning(
+                f"Date range too large ({date_range_days} days). Limiting to 7 days.")
+            end_date = start_date + timedelta(days=7)
+
+        # Process each value
+        result = {}
+        for i, value in enumerate(values):
+            logger.info(f"Processing value {i+1}/{len(values)}: {value}")
+            # Get intervals for this value
+            intervals = get_min_crash_point_intervals_by_date_range(
+                session, value, start_date, end_date, interval_minutes)
+            # Add to result
+            result[str(value)] = intervals
+
+        logger.info(
+            f"Completed batch interval analysis for {len(values)} values")
+        return result
+
+    except Exception as e:
+        logger.error(
+            f"Error analyzing intervals by date range batch: {str(e)}")
         raise
 
 
@@ -221,15 +394,21 @@ def get_min_crash_point_intervals_by_game_sets_batch(
         total_games: Total games to analyze (default: 1000)
 
     Returns:
-        Dictionary mapping each value to a list of interval data
+        Dictionary mapping each value to its corresponding interval data
     """
     try:
-        results = {}
+        # Process each value
+        result = {}
         for value in values:
-            results[value] = get_min_crash_point_intervals_by_game_sets(
+            # Get intervals for this value
+            intervals = get_min_crash_point_intervals_by_game_sets(
                 session, value, games_per_set, total_games)
-        return results
+            # Add to result
+            result[str(value)] = intervals
+
+        return result
 
     except Exception as e:
-        logger.error(f"Error analyzing intervals by game sets batch: {str(e)}")
+        logger.error(
+            f"Error analyzing intervals by game sets batch: {str(e)}")
         raise

@@ -41,7 +41,9 @@ from .intervals import (
     get_min_crash_point_intervals_by_time,
     get_min_crash_point_intervals_by_game_sets,
     get_min_crash_point_intervals_by_time_batch,
-    get_min_crash_point_intervals_by_game_sets_batch
+    get_min_crash_point_intervals_by_game_sets_batch,
+    get_min_crash_point_intervals_by_date_range,
+    get_min_crash_point_intervals_by_date_range_batch
 )
 
 # Export all imported functions
@@ -79,5 +81,7 @@ __all__ = [
     'get_min_crash_point_intervals_by_time',
     'get_min_crash_point_intervals_by_game_sets',
     'get_min_crash_point_intervals_by_time_batch',
-    'get_min_crash_point_intervals_by_game_sets_batch'
+    'get_min_crash_point_intervals_by_game_sets_batch',
+    'get_min_crash_point_intervals_by_date_range',
+    'get_min_crash_point_intervals_by_date_range_batch'
 ]

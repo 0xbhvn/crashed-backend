@@ -22,6 +22,62 @@ DEFAULT_API_TIMEZONE = 'Asia/Kolkata'
 TIMEZONE_HEADER = 'X-Timezone'
 
 
+def parse_datetime(date_str: str, timezone_name: Optional[str] = None) -> datetime:
+    """
+    Parse a date string into a datetime object with timezone information.
+
+    Args:
+        date_str: Date string in ISO format (YYYY-MM-DD or full ISO datetime)
+        timezone_name: Optional timezone name to use when parsing the date
+
+    Returns:
+        Datetime object with timezone information
+
+    Raises:
+        ValueError: If the date string cannot be parsed
+    """
+    try:
+        # Try to parse as full ISO datetime first
+        try:
+            dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = pytz.utc.localize(dt)
+            return dt
+        except ValueError:
+            pass
+
+        # Try to parse as date only (YYYY-MM-DD)
+        if len(date_str) == 10 and date_str[4] == '-' and date_str[7] == '-':
+            # Parse as date only (defaults to midnight)
+            dt = datetime.strptime(date_str, '%Y-%m-%d')
+
+            # Determine timezone to use
+            try:
+                if timezone_name:
+                    # Use timezone from header
+                    tz = pytz.timezone(timezone_name)
+                elif config.TIMEZONE == 'UTC':
+                    # Default to Asia/Kolkata if config is UTC
+                    tz = pytz.timezone(DEFAULT_API_TIMEZONE)
+                else:
+                    # Use configured timezone
+                    tz = pytz.timezone(config.TIMEZONE)
+            except pytz.exceptions.UnknownTimeZoneError:
+                logger.warning(
+                    f"Unknown timezone: {timezone_name}, using UTC instead")
+                tz = pytz.utc
+
+            # Localize the datetime to the specified timezone then convert to UTC
+            dt = tz.localize(dt).astimezone(pytz.utc)
+            return dt
+
+        raise ValueError(f"Unsupported date format: {date_str}")
+    except Exception as e:
+        logger.error(f"Error parsing date '{date_str}': {str(e)}")
+        raise ValueError(
+            f"Invalid date format: {date_str}. Expected ISO format.")
+
+
 def convert_datetime_to_timezone(dt: Optional[Union[datetime, str]], timezone_name: Optional[str] = None) -> Optional[str]:
     """
     Convert UTC datetime to the specified timezone.
