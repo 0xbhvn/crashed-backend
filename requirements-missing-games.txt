@@ -1,0 +1,6 @@
+sqlalchemy>=1.4.0
+playwright>=1.30.0
+psycopg2-binary>=2.9.5
+asyncio>=3.4.3
+python-dotenv>=1.0.0
+tqdm>=4.65.0 
