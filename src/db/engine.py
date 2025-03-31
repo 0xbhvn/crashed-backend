@@ -208,6 +208,7 @@ class Database:
 
         session = self.get_session()
         added_game_ids = []
+        failed_game_ids = []
 
         try:
             for game_data in games_data:
@@ -215,31 +216,45 @@ class Database:
 
                 # Skip if no game_id
                 if not game_id:
+                    logger.warning(f"Skipping game with no ID: {game_data}")
                     continue
 
-                # Check if game already exists
-                existing_game = session.query(CrashGame).filter(
-                    CrashGame.gameId == game_id
-                ).first()
+                try:
+                    # Check if game already exists
+                    existing_game = session.query(CrashGame).filter(
+                        CrashGame.gameId == game_id
+                    ).first()
 
-                if existing_game:
-                    logger.debug(
-                        f"Game with ID {game_id} already exists, skipping")
+                    if existing_game:
+                        logger.debug(
+                            f"Game with ID {game_id} already exists, skipping")
+                        continue
+
+                    # Create and add game
+                    game = CrashGame(**game_data)
+                    session.add(game)
+                    added_game_ids.append(game_id)
+                except Exception as e:
+                    # If an individual game fails, log it and continue with others
+                    logger.error(f"Error adding game {game_id}: {str(e)}")
+                    failed_game_ids.append(game_id)
                     continue
-
-                # Create and add game
-                game = CrashGame(**game_data)
-                session.add(game)
-                added_game_ids.append(game_id)
 
             # Commit all changes at once
             session.commit()
+
+            if failed_game_ids:
+                logger.warning(
+                    f"Failed to add {len(failed_game_ids)} games: {failed_game_ids[:10]}...")
+
             logger.info(f"Added {len(added_game_ids)} new games in bulk")
             return added_game_ids
         except SQLAlchemyError as e:
             session.rollback()
             logger.error(f"Error in bulk adding crash games: {str(e)}")
-            raise
+            # Return the games that were successfully added up to this point
+            logger.info(f"Transaction failed, no games were added")
+            return []
         finally:
             session.close()
 

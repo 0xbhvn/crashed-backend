@@ -346,6 +346,15 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
 
         for game in games:
             try:
+                # Calculate crash point if hash value is available and calculated point is not set
+                if 'hashValue' in game and ('calculatedPoint' not in game or game['calculatedPoint'] is None):
+                    hash_value = game['hashValue']
+                    calculated_crash = BCCrashMonitor.calculate_crash_point(
+                        seed=hash_value)
+                    game['calculatedPoint'] = calculated_crash
+                    logger.debug(
+                        f"Calculated crash point for game {game.get('gameId')}: {calculated_crash}")
+
                 db.add_crash_game(game)
                 saved_count += 1
             except Exception as e:
