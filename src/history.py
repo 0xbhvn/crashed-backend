@@ -61,6 +61,10 @@ class BCCrashMonitor:
         self.game_callbacks: List[Callable[[
             Dict[str, Any]], Awaitable[None]]] = []
 
+        # Logging - Move before database config
+        self.logger = logging.getLogger("bc_crash_monitor")
+        self.verbose_logging = verbose_logging
+
         # Database configuration
         self.database_enabled = database_enabled if database_enabled is not None else config.DATABASE_ENABLED
         self.db = None
@@ -83,10 +87,6 @@ class BCCrashMonitor:
                 self.logger.error(
                     f"Error fetching max gameId from DB: {e}. Initializing last_processed_game_id to None.")
                 self.last_processed_game_id = None
-
-        # Logging
-        self.logger = logging.getLogger("bc_crash_monitor")
-        self.verbose_logging = verbose_logging
 
         self.logger.info(
             f"Database storage is {'enabled' if self.database_enabled else 'disabled'}")
