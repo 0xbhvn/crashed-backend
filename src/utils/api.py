@@ -25,6 +25,11 @@ class APIError(Exception):
     pass
 
 
+class CloudflareBlockError(APIError):
+    """Specific exception for Cloudflare 403 block errors."""
+    pass
+
+
 async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str = None) -> Dict[str, Any]:
     """
     Fetch game history from the Crash API.
@@ -39,6 +44,7 @@ async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str 
 
     Raises:
         APIError: If there was an error fetching the history
+        CloudflareBlockError: If a Cloudflare block (403) is detected
     """
     base_url = base_url or config.API_BASE_URL
     endpoint = endpoint or config.API_HISTORY_ENDPOINT
@@ -83,8 +89,15 @@ async def fetch_game_history(page: int = 1, base_url: str = None, endpoint: str 
                     error_text = await response.text()
                     logger.error(
                         f"API returned error: {response.status} - {error_text}")
-                    raise APIError(
-                        f"Failed to fetch game history: {response.status} - {error_text}")
+                    # Check for specific Cloudflare block signature
+                    if response.status == 403 and '<title>Just a moment...</title>' in error_text:
+                        logger.warning(
+                            f"Cloudflare block detected for page {page}")
+                        raise CloudflareBlockError(
+                            f"Cloudflare block detected (403) on page {page}")
+                    else:
+                        raise APIError(
+                            f"Failed to fetch game history: {response.status} - {error_text}")
 
                 try:
                     json_data = await response.json()

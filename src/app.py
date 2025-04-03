@@ -13,6 +13,7 @@ import logging
 from typing import Optional, Dict, Any
 from aiohttp import web
 import gc
+import math
 
 # Import from local modules
 from . import config
@@ -184,17 +185,17 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         verbose_logging=False
     )
 
-    # Run catchup process if enabled
+    # Run catchup process if enabled AND not skipping
     if not skip_catchup and config.CATCHUP_ENABLED:
         try:
-            logger.info("Running catchup process...")
+            logger.info("Running initial catchup process...")
             await run_catchup(
                 pages=config.CATCHUP_PAGES,
                 batch_size=config.CATCHUP_BATCH_SIZE
             )
-            logger.info("Catchup process completed")
+            logger.info("Initial catchup process completed")
         except Exception as e:
-            logger.error(f"Error during catchup process: {e}")
+            logger.error(f"Error during initial catchup process: {e}")
             logger.warning("Continuing with monitor despite catchup failure")
 
     # Register callback for new games
@@ -202,9 +203,60 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         """Log new games and broadcast via WebSocket."""
         # Convert crashPoint to float for logging
         crash_point = float(game_data.get('crashPoint', 0))
-        game_id = game_data.get('gameId', 'unknown')
+        game_id = game_data.get('gameId', None)
+
+        if not game_id:
+            logger.error(
+                "Received game data without a gameId, cannot process or update state.")
+            return  # Cannot proceed without a game ID
 
         logger.info(f"New game: {game_id} with crash point: {crash_point}")
+
+        # --- Reactive Catchup Logic ---
+        if monitor.cloudflare_block_active:
+            logger.info(
+                f"Detected recovery from Cloudflare block with game {game_id}.")
+            monitor.cloudflare_block_active = False  # Reset the flag
+
+            if monitor.last_processed_game_id:
+                try:
+                    start_id = int(monitor.last_processed_game_id) + 1
+                    end_id = int(game_id) - 1
+
+                    if start_id <= end_id:
+                        num_missing = end_id - start_id + 1
+                        # Calculate pages needed: ceiling of num_missing/10, add 1 buffer, cap at 200
+                        pages_needed = min(
+                            200, max(1, math.ceil(num_missing / 10) + 1))
+                        batch_size_catchup = 100  # As requested
+
+                        logger.info(
+                            f"Launching targeted catchup for missing games: {start_id} to {end_id} ({num_missing} games). Will fetch {pages_needed} pages with batch size {batch_size_catchup}.")
+
+                        # Launch catchup in the background
+                        asyncio.create_task(run_catchup(
+                            pages=pages_needed,
+                            batch_size=batch_size_catchup,  # Use specific batch size for catchup
+                            start_game_id=str(start_id),
+                            end_game_id=str(end_id)
+                        ))
+                    else:
+                        logger.info(
+                            f"No missing games detected between {monitor.last_processed_game_id} and {game_id}.")
+
+                except ValueError:
+                    logger.error(
+                        f"Could not convert game IDs ({monitor.last_processed_game_id}, {game_id}) to integers for catchup calculation.")
+                except Exception as e:
+                    logger.error(
+                        f"Error calculating or launching targeted catchup: {e}")
+            else:
+                logger.warning(
+                    "Cloudflare block was active, but last_processed_game_id is not set. Skipping targeted catchup.")
+        # --- End Reactive Catchup Logic ---
+
+        # Always update the last processed ID after processing a successful game
+        monitor.last_processed_game_id = game_id
 
         try:
             # Broadcast the new game to WebSocket clients if we have a WebSocket manager

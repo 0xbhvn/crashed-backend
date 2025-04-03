@@ -21,6 +21,7 @@ from . import config
 
 # Import from utils
 from .utils import configure_logging, fetch_game_history, process_game_data, APIError
+from .utils.api import CloudflareBlockError
 
 # Import from db
 from .db import get_database, CrashGame
@@ -53,7 +54,8 @@ class BCCrashMonitor:
 
         # Store latest hashes to avoid duplicates
         self.latest_hashes = deque(maxlen=config.MAX_HISTORY_SIZE)
-        self.last_processed_game_id = None
+        self.last_processed_game_id: Optional[str] = None
+        self.cloudflare_block_active: bool = False
 
         # Game callbacks
         self.game_callbacks: List[Callable[[
@@ -64,7 +66,23 @@ class BCCrashMonitor:
         self.db = None
         if self.database_enabled and db_engine:
             from src.db.engine import get_database
+            from sqlalchemy import func
             self.db = get_database(db_engine)
+            try:
+                with self.db.get_session() as session:
+                    max_id_result = session.query(
+                        func.max(CrashGame.gameId)).scalar()
+                    if max_id_result:
+                        self.last_processed_game_id = str(max_id_result)
+                        self.logger.info(
+                            f"Initialized last_processed_game_id from DB: {self.last_processed_game_id}")
+                    else:
+                        self.logger.info(
+                            "Database is empty, last_processed_game_id set to None.")
+            except Exception as e:
+                self.logger.error(
+                    f"Error fetching max gameId from DB: {e}. Initializing last_processed_game_id to None.")
+                self.last_processed_game_id = None
 
         # Logging
         self.logger = logging.getLogger("bc_crash_monitor")
@@ -146,6 +164,11 @@ class BCCrashMonitor:
 
         except APIError as e:
             self.logger.error(f"API error fetching crash history: {e}")
+            return []
+        except CloudflareBlockError as e:
+            self.logger.warning(
+                f"Cloudflare block detected during history fetch: {e}")
+            self.cloudflare_block_active = True
             return []
         except Exception as e:
             self.logger.error(f"Error fetching crash history: {e}")
@@ -247,7 +270,7 @@ class BCCrashMonitor:
                             self.logger.error(
                                 f"Error storing game in database: {e}")
 
-                    # Update last processed ID
+                    # Update last processed ID only after successful processing/saving
                     self.last_processed_game_id = result['gameId']
 
                     # Notify callbacks
@@ -288,10 +311,12 @@ class BCCrashMonitor:
                 self.logger.info("Monitor loop cancelled")
                 break
             except Exception as e:
+                retry_msg = f"Retrying in {self.polling_interval} seconds..."
+                if hasattr(self, 'retry_interval'):
+                    retry_msg = f"Retrying in {self.retry_interval} seconds..."
                 self.logger.error(f"Error in monitor loop: {e}")
-                self.logger.info(
-                    f"Retrying in {self.retry_interval} seconds...")
-                await asyncio.sleep(self.retry_interval)
+                self.logger.info(retry_msg)
+                await asyncio.sleep(self.polling_interval if not hasattr(self, 'retry_interval') else self.retry_interval)
 
     def get_latest_results(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
