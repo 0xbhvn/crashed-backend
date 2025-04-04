@@ -26,6 +26,9 @@ from .utils.api import CloudflareBlockError
 # Import from db
 from .db import get_database, CrashGame
 
+# Define reduced polling interval when blocked
+REDUCED_POLLING_INTERVAL = 60  # seconds
+
 
 class BCCrashMonitor:
     def __init__(self, api_base_url=None, api_history_endpoint=None, game_url=None, salt=None,
@@ -304,19 +307,36 @@ class BCCrashMonitor:
             try:
                 # Poll and process new games
                 await self.poll_and_process()
-
-                # Wait for the next polling interval
-                await asyncio.sleep(self.polling_interval)
             except asyncio.CancelledError:
                 self.logger.info("Monitor loop cancelled")
                 break
             except Exception as e:
-                retry_msg = f"Retrying in {self.polling_interval} seconds..."
-                if hasattr(self, 'retry_interval'):
-                    retry_msg = f"Retrying in {self.retry_interval} seconds..."
+                # Determine sleep interval based on block status
+                current_sleep_interval = REDUCED_POLLING_INTERVAL if self.cloudflare_block_active else self.polling_interval
+                retry_msg = f"Retrying in {current_sleep_interval} seconds..."
                 self.logger.error(f"Error in monitor loop: {e}")
                 self.logger.info(retry_msg)
-                await asyncio.sleep(self.polling_interval if not hasattr(self, 'retry_interval') else self.retry_interval)
+                # Use the determined interval for sleeping after an error
+                await asyncio.sleep(current_sleep_interval)
+            else:
+                # Determine sleep interval for the next poll based on block status
+                if self.cloudflare_block_active:
+                    sleep_interval = REDUCED_POLLING_INTERVAL
+                    self.logger.debug(
+                        f"Cloudflare block active. Using reduced polling interval: {sleep_interval}s")
+                else:
+                    # Check if we just recovered from a block
+                    if 'previously_blocked' not in locals() or previously_blocked:
+                        if 'previously_blocked' in locals():  # Avoid logging on first run
+                            self.logger.info(
+                                f"Cloudflare block cleared. Returning to normal polling interval: {self.polling_interval}s")
+                    sleep_interval = self.polling_interval
+
+                # Store current block state for the next iteration's check
+                previously_blocked = self.cloudflare_block_active
+
+                # Wait for the next polling interval
+                await asyncio.sleep(sleep_interval)
 
     def get_latest_results(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
