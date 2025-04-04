@@ -201,6 +201,10 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     # Register callback for new games
     async def log_game(game_data: Dict[str, Any]) -> None:
         """Log new games and broadcast via WebSocket."""
+        # Add diagnostic logging for Cloudflare block state
+        logger.info(
+            f"Processing game {game_data.get('gameId')}, cloudflare_block_active: {monitor.cloudflare_block_active}")
+
         # Convert crashPoint to float for logging
         crash_point = float(game_data.get('crashPoint', 0))
         game_id = game_data.get('gameId', None)
@@ -214,45 +218,65 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
 
         # --- Reactive Catchup Logic ---
         if monitor.cloudflare_block_active:
-            logger.info(
-                f"Detected recovery from Cloudflare block with game {game_id}.")
-            monitor.cloudflare_block_active = False  # Reset the flag
+            try:
+                logger.info(
+                    f"Detected recovery from Cloudflare block with game {game_id}.")
+                monitor.cloudflare_block_active = False  # Reset the flag
 
-            if monitor.last_processed_game_id:
-                try:
-                    start_id = int(monitor.last_processed_game_id) + 1
-                    end_id = int(game_id) - 1
-
-                    if start_id <= end_id:
-                        num_missing = end_id - start_id + 1
-                        # Calculate pages needed: ceiling of num_missing/10, add 1 buffer, cap at 200
-                        pages_needed = min(
-                            200, max(1, math.ceil(num_missing / 10) + 1))
-                        batch_size_catchup = 100  # As requested
+                if monitor.last_processed_game_id:
+                    try:
+                        start_id = int(monitor.last_processed_game_id) + 1
+                        end_id = int(game_id) - 1
 
                         logger.info(
-                            f"Launching targeted catchup for missing games: {start_id} to {end_id} ({num_missing} games). Will fetch {pages_needed} pages with batch size {batch_size_catchup}.")
+                            f"Calculated catchup range: {start_id} to {end_id}")
 
-                        # Launch catchup in the background
-                        asyncio.create_task(run_catchup(
-                            pages=pages_needed,
-                            batch_size=batch_size_catchup,  # Use specific batch size for catchup
-                            start_game_id=str(start_id),
-                            end_game_id=str(end_id)
-                        ))
-                    else:
-                        logger.info(
-                            f"No missing games detected between {monitor.last_processed_game_id} and {game_id}.")
+                        if start_id <= end_id:
+                            num_missing = end_id - start_id + 1
+                            # Calculate pages needed: ceiling of num_missing/10, add 1 buffer, cap at 200
+                            pages_needed = min(
+                                200, max(1, math.ceil(num_missing / 10) + 1))
+                            batch_size_catchup = 100  # As requested
 
-                except ValueError:
-                    logger.error(
-                        f"Could not convert game IDs ({monitor.last_processed_game_id}, {game_id}) to integers for catchup calculation.")
-                except Exception as e:
-                    logger.error(
-                        f"Error calculating or launching targeted catchup: {e}")
-            else:
-                logger.warning(
-                    "Cloudflare block was active, but last_processed_game_id is not set. Skipping targeted catchup.")
+                            logger.info(
+                                f"Launching targeted catchup for missing games: {start_id} to {end_id} ({num_missing} games). Will fetch {pages_needed} pages with batch size {batch_size_catchup}.")
+
+                            # Launch catchup in the background
+                            catchup_task = asyncio.create_task(run_catchup(
+                                pages=pages_needed,
+                                batch_size=batch_size_catchup,  # Use specific batch size for catchup
+                                start_game_id=str(start_id),
+                                end_game_id=str(end_id)
+                            ))
+
+                            # Add a callback to log when the catchup completes
+                            def catchup_done(task):
+                                try:
+                                    task.result()  # Get the result or exception
+                                    logger.info(
+                                        f"Catchup for games {start_id}-{end_id} completed successfully")
+                                except Exception as e:
+                                    logger.error(
+                                        f"Catchup for games {start_id}-{end_id} failed: {e}")
+
+                            catchup_task.add_done_callback(catchup_done)
+                        else:
+                            logger.info(
+                                f"No missing games detected between {monitor.last_processed_game_id} and {game_id}.")
+
+                    except ValueError:
+                        logger.error(
+                            f"Could not convert game IDs ({monitor.last_processed_game_id}, {game_id}) to integers for catchup calculation.")
+                    except Exception as e:
+                        logger.error(
+                            f"Error calculating or launching targeted catchup: {e}")
+                else:
+                    logger.warning(
+                        "Cloudflare block was active, but last_processed_game_id is not set. Skipping targeted catchup.")
+            except Exception as e:
+                logger.error(f"ERROR in reactive catchup logic: {e}")
+                # Still reset the flag even if there's an error
+                monitor.cloudflare_block_active = False
         # --- End Reactive Catchup Logic ---
 
         # Always update the last processed ID after processing a successful game
