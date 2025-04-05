@@ -148,12 +148,33 @@ Example error response:
 
 ## Configuration
 
-The API server runs on port 3000 by default. You can change this by setting the `API_PORT` environment variable.
+The API server runs on different ports depending on the environment:
 
-```bash
-export API_PORT=8000
-python -m src.main api --skip-polling
-```
+- Development mode: Port 8000 by default
+- Production mode: Port 3000 by default
+
+You can configure this in three ways:
+
+1. **Set the environment**:
+
+   ```bash
+   export ENVIRONMENT=development  # Uses port 8000
+   # or
+   export ENVIRONMENT=production   # Uses port 3000
+   ```
+
+2. **Override the port directly**:
+
+   ```bash
+   export API_PORT=8000  # Overrides the default port regardless of environment
+   ```
+
+3. **Modify in .env file**:
+
+   ```text
+   ENVIRONMENT=development
+   API_PORT=8000  # Optional override
+   ```
 
 ### Timezone Configuration
 

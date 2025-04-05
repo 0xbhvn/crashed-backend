@@ -20,6 +20,7 @@ from . import config
 from .history import BCCrashMonitor
 from .utils import load_env, configure_logging, fetch_game_history, fetch_games_batch
 from .db import get_database, CrashGame, create_migration, upgrade_database, downgrade_database, show_migrations
+from .utils.env import get_env_var
 
 
 def parse_arguments():
@@ -160,14 +161,18 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     setup_api(api_app)
 
     # Get API port from config or environment, fallback to 3000 for container compatibility
-    api_port = int(config.get_env_var('API_PORT', '3000'))
+    dev_mode = get_env_var('ENVIRONMENT', '').lower() == 'development'
+    # Use port 8000 for development, 3000 for production
+    default_port = '8000' if dev_mode else '3000'
+    api_port = int(config.get_env_var('API_PORT', default_port))
 
     # Create API server
     api_runner = web.AppRunner(api_app)
     await api_runner.setup()
     api_site = web.TCPSite(api_runner, '0.0.0.0', api_port)
     await api_site.start()
-    logger.info(f"API server started on port {api_port}")
+    logger.info(
+        f"API server started on port {api_port}" + (" (development mode)" if dev_mode else ""))
 
     # Skip the rest if we're only running the API server
     if skip_polling:
