@@ -122,22 +122,14 @@ def get_series_without_min_crash_point_by_games(
                         'end_time': game.endTime,
                         'length': 1,
                         'follow_streak': {
-                            'count': 0,
-                            'games': []
-                        }
-                    }
-
-                    # Check if there's a following game to include in the follow_streak
-                    if i + 1 < len(games):
-                        next_game = games[i + 1]
-                        standalone_series['follow_streak'] = {
-                            'count': 1,
-                            'games': [{
-                                'game_id': next_game.gameId,
-                                'crash_point': next_game.crashPoint,
-                                'time': next_game.endTime
+                            'count': 1,  # Set to 1 for the game itself
+                            'games': [{   # The follow streak is the current game
+                                'game_id': game.gameId,
+                                'crash_point': game.crashPoint,
+                                'time': game.endTime
                             }]
                         }
+                    }
 
                     series_list.append(standalone_series)
 
@@ -273,22 +265,14 @@ def get_series_without_min_crash_point_by_time(
                         'end_time': game.endTime,
                         'length': 1,
                         'follow_streak': {
-                            'count': 0,
-                            'games': []
-                        }
-                    }
-
-                    # Check if there's a following game to include in the follow_streak
-                    if i + 1 < len(games):
-                        next_game = games[i + 1]
-                        standalone_series['follow_streak'] = {
-                            'count': 1,
-                            'games': [{
-                                'game_id': next_game.gameId,
-                                'crash_point': next_game.crashPoint,
-                                'time': next_game.endTime
+                            'count': 1,  # Set to 1 for the game itself
+                            'games': [{   # The follow streak is the current game
+                                'game_id': game.gameId,
+                                'crash_point': game.crashPoint,
+                                'time': game.endTime
                             }]
                         }
+                    }
 
                     series_list.append(standalone_series)
 
