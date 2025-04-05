@@ -126,6 +126,19 @@ def get_series_without_min_crash_point_by_games(
                             'games': []
                         }
                     }
+
+                    # Check if there's a following game to include in the follow_streak
+                    if i + 1 < len(games):
+                        next_game = games[i + 1]
+                        standalone_series['follow_streak'] = {
+                            'count': 1,
+                            'games': [{
+                                'game_id': next_game.gameId,
+                                'crash_point': next_game.crashPoint,
+                                'time': next_game.endTime
+                            }]
+                        }
+
                     series_list.append(standalone_series)
 
             i += 1
@@ -264,6 +277,19 @@ def get_series_without_min_crash_point_by_time(
                             'games': []
                         }
                     }
+
+                    # Check if there's a following game to include in the follow_streak
+                    if i + 1 < len(games):
+                        next_game = games[i + 1]
+                        standalone_series['follow_streak'] = {
+                            'count': 1,
+                            'games': [{
+                                'game_id': next_game.gameId,
+                                'crash_point': next_game.crashPoint,
+                                'time': next_game.endTime
+                            }]
+                        }
+
                     series_list.append(standalone_series)
 
             i += 1
