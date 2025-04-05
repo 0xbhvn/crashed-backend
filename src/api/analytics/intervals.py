@@ -265,13 +265,14 @@ def get_min_crash_point_intervals_by_game_sets(
         interval_index = game_offset_in_hundred // games_per_set
 
         # Calculate the first ID in the current interval
-        interval_start_offset = (interval_index * games_per_set) + 1
+        # Start from 0 instead of 1
+        interval_start_offset = (interval_index * games_per_set)
         current_interval_start_id = (
             highest_game_id // 100) * 100 + interval_start_offset
 
         # If the highest ID is below the calculated start, move to previous interval
         if highest_game_id < current_interval_start_id:
-            if interval_start_offset > games_per_set:
+            if interval_start_offset >= games_per_set:
                 # Move to previous interval in the same hundred
                 interval_start_offset -= games_per_set
                 current_interval_start_id = (
@@ -279,7 +280,7 @@ def get_min_crash_point_intervals_by_game_sets(
             else:
                 # Move to the last interval of the previous hundred
                 last_interval_offset = (
-                    (intervals_per_hundred - 1) * games_per_set) + 1
+                    (intervals_per_hundred - 1) * games_per_set)
                 current_interval_start_id = (
                     (highest_game_id // 100) - 1) * 100 + last_interval_offset
 
@@ -318,7 +319,8 @@ def get_min_crash_point_intervals_by_game_sets(
             # Determine which interval this game belongs to
             game_offset_in_hundred = game_id % 100
             interval_index = game_offset_in_hundred // games_per_set
-            interval_start_offset = (interval_index * games_per_set) + 1
+            # Start from 0 instead of 1
+            interval_start_offset = (interval_index * games_per_set)
             interval_start_id = (game_id // 100) * 100 + interval_start_offset
             interval_end_id = interval_start_id + games_per_set - 1
 
@@ -538,13 +540,14 @@ def get_min_crash_point_intervals_by_game_sets_batch(
         interval_index = game_offset_in_hundred // games_per_set
 
         # Calculate the first ID in the current interval
-        interval_start_offset = (interval_index * games_per_set) + 1
+        # Start from 0 instead of 1
+        interval_start_offset = (interval_index * games_per_set)
         current_interval_start_id = (
             highest_game_id // 100) * 100 + interval_start_offset
 
         # If the highest ID is below the calculated start, move to previous interval
         if highest_game_id < current_interval_start_id:
-            if interval_start_offset > games_per_set:
+            if interval_start_offset >= games_per_set:
                 # Move to previous interval in the same hundred
                 interval_start_offset -= games_per_set
                 current_interval_start_id = (
@@ -552,7 +555,7 @@ def get_min_crash_point_intervals_by_game_sets_batch(
             else:
                 # Move to the last interval of the previous hundred
                 last_interval_offset = (
-                    (intervals_per_hundred - 1) * games_per_set) + 1
+                    (intervals_per_hundred - 1) * games_per_set)
                 current_interval_start_id = (
                     (highest_game_id // 100) - 1) * 100 + last_interval_offset
 
@@ -578,7 +581,7 @@ def get_min_crash_point_intervals_by_game_sets_batch(
 
             interval_key = f"{interval_start_id}-{interval_end_id}"
             game_intervals[interval_key] = {
-                'set_id': i,
+                'set_id': i + 1,  # Start set_id from 1 to match existing behavior
                 'start_game': interval_start_id,
                 'end_game': interval_end_id,
                 'games': []
@@ -591,7 +594,8 @@ def get_min_crash_point_intervals_by_game_sets_batch(
             # Determine which interval this game belongs to
             game_offset_in_hundred = game_id % 100
             interval_index = game_offset_in_hundred // games_per_set
-            interval_start_offset = (interval_index * games_per_set) + 1
+            # Start from 0 instead of 1
+            interval_start_offset = (interval_index * games_per_set)
             interval_start_id = (game_id // 100) * 100 + interval_start_offset
             interval_end_id = interval_start_id + games_per_set - 1
 
@@ -624,9 +628,12 @@ def get_min_crash_point_intervals_by_game_sets_batch(
 
             # Create result intervals in sequential order
             for i in range(num_intervals):
+                # Convert from 0-based to 1-based for set_id to match existing behavior
+                set_id = i + 1
+
                 # Find the interval data with matching set_id
                 interval_data = next(
-                    (data for key, data in game_intervals.items() if data['set_id'] == i), None)
+                    (data for key, data in game_intervals.items() if data['set_id'] == set_id), None)
 
                 if not interval_data:
                     # This should not happen with the new approach, but just in case
@@ -660,7 +667,7 @@ def get_min_crash_point_intervals_by_game_sets_batch(
                         end_time = latest_time
 
                 value_intervals.append({
-                    'set_id': i,
+                    'set_id': set_id,
                     'start_time': start_time,
                     'end_time': end_time,
                     'start_game': interval_data['start_game'],
