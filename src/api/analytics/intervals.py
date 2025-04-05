@@ -220,39 +220,32 @@ def get_min_crash_point_intervals_by_date_range(
 
 def get_min_crash_point_intervals_by_game_sets(
     session: Session,
-    min_value: float,
+    min_crash_point: float,
     games_per_set: int = 10,
     total_games: int = 1000
 ) -> List[Dict[str, Any]]:
     """
-    Count occurrences of crash points >= specified value in game set intervals.
+    Count occurrences of crash points >= min_crash_point in game set intervals.
 
     Args:
         session: SQLAlchemy session
-        min_value: Minimum crash point threshold
+        min_crash_point: Minimum crash point threshold
         games_per_set: Number of games in each set (default: 10)
         total_games: Total games to analyze (default: 1000)
 
     Returns:
-        List of dictionaries containing interval data, each with:
-        - set_id: Identifier for the game set
-        - start_time: Start time of the interval
-        - end_time: End time of the interval
-        - start_game: Starting game ID in the interval
-        - end_game: Ending game ID in the interval
-        - count: Number of occurrences in this set
-        - percentage: Percentage of games with crash point >= min_value
+        List of intervals with occurrence data
     """
     try:
-        # Ensure games_per_set is a divisor of 100 for proper boundary alignment
+        # Ensure games_per_set is valid
         valid_set_sizes = [10, 20, 25, 50]
         if games_per_set not in valid_set_sizes:
-            logger.warning(f"games_per_set={games_per_set} is not a divisor of 100. " +
+            logger.warning(f"games_per_set={games_per_set} is not in valid set sizes. " +
                            f"Using closest valid value: {min(valid_set_sizes, key=lambda x: abs(x-games_per_set))}")
             games_per_set = min(
                 valid_set_sizes, key=lambda x: abs(x-games_per_set))
 
-        # Get the most recent games ordered by gameId (descending)
+        # Get the most recent games for analysis
         games = session.query(CrashGame)\
             .order_by(desc(CrashGame.gameId))\
             .limit(total_games)\
@@ -265,13 +258,9 @@ def get_min_crash_point_intervals_by_game_sets(
         highest_game_id = int(games[0].gameId)
 
         # Calculate interval boundaries based on games_per_set
-        # For example, if games_per_set=25:
-        # - Intervals should start at xx01, xx26, xx51, xx76
-        # - If games_per_set=50, intervals should start at xx01, xx51
         intervals_per_hundred = 100 // games_per_set
 
         # Find which interval the highest game ID falls into
-        # Position within the current hundred
         game_offset_in_hundred = highest_game_id % 100
         interval_index = game_offset_in_hundred // games_per_set
 
@@ -294,56 +283,35 @@ def get_min_crash_point_intervals_by_game_sets(
                 current_interval_start_id = (
                     (highest_game_id // 100) - 1) * 100 + last_interval_offset
 
-        # Map to store games by interval
-        intervals_map = {}
+        # Find the lowest game ID to determine complete range
+        lowest_game_id = int(games[-1].gameId)
 
-        # Number of intervals to analyze
-        num_intervals = (total_games + games_per_set - 1) // games_per_set
+        # Calculate how many intervals we need to cover the entire range
+        total_game_range = highest_game_id - lowest_game_id + 1
+        num_intervals_needed = (
+            total_game_range + games_per_set - 1) // games_per_set
 
-        # Process intervals
+        # Ensure we don't exceed what the user requested
+        num_intervals = min(num_intervals_needed,
+                            (total_games + games_per_set - 1) // games_per_set)
+
+        # Create a mapping of intervals to store games
+        game_intervals = {}
+
+        # Initialize intervals - create all continuous intervals
         for i in range(num_intervals):
-            # Calculate the start ID for this interval, moving backward from the current interval
-            if i == 0:
-                interval_start_id = current_interval_start_id
-            else:
-                # Calculate how many full hundreds to go back
-                hundreds_back = ((i * games_per_set) // 100)
-                # Calculate remaining offset within the hundred
-                remaining_offset = (i * games_per_set) % 100
-
-                # Start with the same offset as current interval
-                offset_in_hundred = interval_start_offset
-
-                # Adjust the offset by moving back the required number of intervals
-                while remaining_offset > 0:
-                    offset_in_hundred -= games_per_set
-                    remaining_offset -= games_per_set
-
-                    # If we went negative in this hundred, go to the previous hundred
-                    if offset_in_hundred <= 0:
-                        hundreds_back += 1
-                        offset_in_hundred = (
-                            (intervals_per_hundred - 1) * games_per_set) + 1
-                        remaining_offset = 0  # We've handled the remainder
-
-                # Calculate the final start ID
-                hundred_base = ((highest_game_id // 100) - hundreds_back) * 100
-                interval_start_id = hundred_base + offset_in_hundred
-
+            interval_start_id = current_interval_start_id - (i * games_per_set)
             interval_end_id = interval_start_id + games_per_set - 1
 
-            # Initialize interval data
             interval_key = f"{interval_start_id}-{interval_end_id}"
-            intervals_map[interval_key] = {
-                'set_id': i,
+            game_intervals[interval_key] = {
+                'set_id': i + 1,  # Start set_id from 1 to match existing behavior
                 'start_game': interval_start_id,
                 'end_game': interval_end_id,
-                'games': [],
-                'count': 0,
-                'total_games': 0
+                'games': []
             }
 
-        # Assign games to appropriate intervals
+        # Assign games to intervals
         for game in games:
             game_id = int(game.gameId)
 
@@ -356,46 +324,83 @@ def get_min_crash_point_intervals_by_game_sets(
 
             interval_key = f"{interval_start_id}-{interval_end_id}"
 
-            # Only count games in our predefined intervals
-            if interval_key in intervals_map:
-                intervals_map[interval_key]['games'].append(game)
-                intervals_map[interval_key]['total_games'] += 1
-                if game.crashPoint >= min_value:
-                    intervals_map[interval_key]['count'] += 1
+            if interval_key in game_intervals:
+                game_intervals[interval_key]['games'].append(game)
 
-        # Process intervals and calculate statistics
-        result_intervals = []
+        # Find the earliest and latest times for reference (for intervals with no games)
+        earliest_time = None
+        latest_time = None
+        for interval_data in game_intervals.values():
+            if interval_data['games']:
+                interval_games = sorted(
+                    interval_data['games'], key=lambda g: g.endTime)
+                if earliest_time is None or interval_games[0].endTime < earliest_time:
+                    earliest_time = interval_games[0].endTime
+                if latest_time is None or interval_games[-1].endTime > latest_time:
+                    latest_time = interval_games[-1].endTime
 
-        for interval_key, interval_data in sorted(intervals_map.items(), key=lambda x: x[1]['set_id']):
-            if interval_data['total_games'] > 0:
-                interval_games = interval_data['games']
+        # If we couldn't find any time reference, use current time
+        if earliest_time is None:
+            earliest_time = datetime.now()
+            latest_time = earliest_time
 
-                # Get the start and end times from the games in this interval
-                if interval_games:
-                    # Use the earliest and latest time from actual games in the interval
-                    interval_games.sort(key=lambda g: g.endTime)
-                    start_time = interval_games[0].endTime
-                    end_time = interval_games[-1].endTime
+        # Create result intervals in sequential order
+        result = []
+        for i in range(num_intervals):
+            # Convert from 0-based to 1-based for set_id to match existing behavior
+            set_id = i + 1
 
-                    # Calculate percentage
-                    percentage = (
-                        interval_data['count'] / interval_data['total_games']) * 100
+            # Find the interval data with matching set_id
+            interval_data = next(
+                (data for key, data in game_intervals.items() if data['set_id'] == set_id), None)
 
-                    result_intervals.append({
-                        'set_id': interval_data['set_id'],
-                        'start_time': start_time,
-                        'end_time': end_time,
-                        'start_game': interval_data['start_game'],
-                        'end_game': interval_data['end_game'],
-                        'count': interval_data['count'],
-                        'total_games': interval_data['total_games'],
-                        'percentage': percentage
-                    })
+            if not interval_data:
+                # This should not happen with the new approach, but just in case
+                continue
 
-        return result_intervals
+            # Calculate statistics for this interval
+            interval_games = interval_data['games']
+            matching_games = len(
+                [g for g in interval_games if g.crashPoint >= min_crash_point])
+            total_interval_games = len(interval_games)
+
+            # Get the start and end times from the games in this interval
+            if interval_games:
+                # Sort games by time for time range calculation
+                interval_games = sorted(
+                    interval_games, key=lambda g: g.endTime)
+                start_time = interval_games[0].endTime
+                end_time = interval_games[-1].endTime
+            else:
+                # For intervals with no games, use estimated times
+                time_diff = latest_time - earliest_time
+                if num_intervals > 1:
+                    relative_position = i / (num_intervals - 1)
+                    estimated_time = latest_time - \
+                        (time_diff * relative_position)
+                    # Offset slightly for start/end
+                    start_time = estimated_time - timedelta(minutes=1)
+                    end_time = estimated_time
+                else:
+                    start_time = earliest_time
+                    end_time = latest_time
+
+            result.append({
+                'set_id': set_id,
+                'start_time': start_time,
+                'end_time': end_time,
+                'start_game': interval_data['start_game'],
+                'end_game': interval_data['end_game'],
+                'count': matching_games,
+                'total_games': total_interval_games,
+                'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0
+            })
+
+        return result
 
     except Exception as e:
-        logger.error(f"Error analyzing intervals by game sets: {str(e)}")
+        logger.error(
+            f"Error analyzing intervals by game sets: {str(e)}")
         raise
 
 
@@ -551,40 +556,24 @@ def get_min_crash_point_intervals_by_game_sets_batch(
                 current_interval_start_id = (
                     (highest_game_id // 100) - 1) * 100 + last_interval_offset
 
-        # Create a mapping of games to intervals once
+        # Find the lowest game ID to determine complete range
+        lowest_game_id = int(games[-1].gameId)
+
+        # Calculate how many intervals we need to cover the entire range
+        total_game_range = highest_game_id - lowest_game_id + 1
+        num_intervals_needed = (
+            total_game_range + games_per_set - 1) // games_per_set
+
+        # Ensure we don't exceed what the user requested
+        num_intervals = min(num_intervals_needed,
+                            (total_games + games_per_set - 1) // games_per_set)
+
+        # Create a mapping of intervals to store games
         game_intervals = {}
-        num_intervals = (total_games + games_per_set - 1) // games_per_set
 
-        # Initialize intervals
+        # Initialize intervals - create all continuous intervals
         for i in range(num_intervals):
-            # Calculate the start ID for this interval, moving backward from the current interval
-            if i == 0:
-                interval_start_id = current_interval_start_id
-            else:
-                # Calculate how many full hundreds to go back
-                hundreds_back = ((i * games_per_set) // 100)
-                # Calculate remaining offset within the hundred
-                remaining_offset = (i * games_per_set) % 100
-
-                # Start with the same offset as current interval
-                offset_in_hundred = interval_start_offset
-
-                # Adjust the offset by moving back the required number of intervals
-                while remaining_offset > 0:
-                    offset_in_hundred -= games_per_set
-                    remaining_offset -= games_per_set
-
-                    # If we went negative in this hundred, go to the previous hundred
-                    if offset_in_hundred <= 0:
-                        hundreds_back += 1
-                        offset_in_hundred = (
-                            (intervals_per_hundred - 1) * games_per_set) + 1
-                        remaining_offset = 0  # We've handled the remainder
-
-                # Calculate the final start ID
-                hundred_base = ((highest_game_id // 100) - hundreds_back) * 100
-                interval_start_id = hundred_base + offset_in_hundred
-
+            interval_start_id = current_interval_start_id - (i * games_per_set)
             interval_end_id = interval_start_id + games_per_set - 1
 
             interval_key = f"{interval_start_id}-{interval_end_id}"
@@ -611,34 +600,75 @@ def get_min_crash_point_intervals_by_game_sets_batch(
             if interval_key in game_intervals:
                 game_intervals[interval_key]['games'].append(game)
 
+        # Find the earliest and latest times for reference (for intervals with no games)
+        earliest_time = None
+        latest_time = None
+        for interval_data in game_intervals.values():
+            if interval_data['games']:
+                interval_games = sorted(
+                    interval_data['games'], key=lambda g: g.endTime)
+                if earliest_time is None or interval_games[0].endTime < earliest_time:
+                    earliest_time = interval_games[0].endTime
+                if latest_time is None or interval_games[-1].endTime > latest_time:
+                    latest_time = interval_games[-1].endTime
+
+        # If we couldn't find any time reference, use current time
+        if earliest_time is None:
+            earliest_time = datetime.now()
+            latest_time = earliest_time
+
         # Process each value to calculate intervals
         result = {}
         for value in values:
             value_intervals = []
 
-            for interval_key, interval_data in sorted(game_intervals.items(), key=lambda x: x[1]['set_id']):
-                interval_games = interval_data['games']
-                if interval_games:
-                    # Calculate statistics for this interval and value
-                    matching_games = len(
-                        [g for g in interval_games if g.crashPoint >= value])
-                    total_interval_games = len(interval_games)
+            # Create result intervals in sequential order
+            for i in range(num_intervals):
+                # Find the interval data with matching set_id
+                interval_data = next(
+                    (data for key, data in game_intervals.items() if data['set_id'] == i), None)
 
+                if not interval_data:
+                    # This should not happen with the new approach, but just in case
+                    continue
+
+                # Calculate statistics for this interval and value
+                interval_games = interval_data['games']
+                matching_games = len(
+                    [g for g in interval_games if g.crashPoint >= value])
+                total_interval_games = len(interval_games)
+
+                # Get the start and end times from the games in this interval
+                if interval_games:
                     # Sort games by time for time range calculation
-                    interval_games.sort(key=lambda g: g.endTime)
+                    interval_games = sorted(
+                        interval_games, key=lambda g: g.endTime)
                     start_time = interval_games[0].endTime
                     end_time = interval_games[-1].endTime
+                else:
+                    # For intervals with no games, use estimated times
+                    time_diff = latest_time - earliest_time
+                    if num_intervals > 1:
+                        relative_position = i / (num_intervals - 1)
+                        estimated_time = latest_time - \
+                            (time_diff * relative_position)
+                        # Offset slightly for start/end
+                        start_time = estimated_time - timedelta(minutes=1)
+                        end_time = estimated_time
+                    else:
+                        start_time = earliest_time
+                        end_time = latest_time
 
-                    value_intervals.append({
-                        'set_id': interval_data['set_id'],
-                        'start_time': start_time,
-                        'end_time': end_time,
-                        'start_game': interval_data['start_game'],
-                        'end_game': interval_data['end_game'],
-                        'count': matching_games,
-                        'total_games': total_interval_games,
-                        'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0
-                    })
+                value_intervals.append({
+                    'set_id': i,
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'start_game': interval_data['start_game'],
+                    'end_game': interval_data['end_game'],
+                    'count': matching_games,
+                    'total_games': total_interval_games,
+                    'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0
+                })
 
             # Add to result dictionary
             result[str(value)] = value_intervals
