@@ -245,7 +245,7 @@ def get_min_crash_point_intervals_by_game_sets(
     """
     try:
         # Ensure games_per_set is a divisor of 100 for proper boundary alignment
-        valid_set_sizes = [1, 2, 4, 5, 10, 20, 25, 50, 100]
+        valid_set_sizes = [10, 20, 25, 50]
         if games_per_set not in valid_set_sizes:
             logger.warning(f"games_per_set={games_per_set} is not a divisor of 100. " +
                            f"Using closest valid value: {min(valid_set_sizes, key=lambda x: abs(x-games_per_set))}")
@@ -506,7 +506,7 @@ def get_min_crash_point_intervals_by_game_sets_batch(
     """
     try:
         # Ensure games_per_set is a divisor of 100 for proper boundary alignment
-        valid_set_sizes = [1, 2, 4, 5, 10, 20, 25, 50, 100]
+        valid_set_sizes = [10, 20, 25, 50]
         if games_per_set not in valid_set_sizes:
             logger.warning(f"games_per_set={games_per_set} is not a divisor of 100. " +
                            f"Using closest valid value: {min(valid_set_sizes, key=lambda x: abs(x-games_per_set))}")
