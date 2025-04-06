@@ -206,9 +206,10 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     # Register callback for new games
     async def log_game(game_data: Dict[str, Any]) -> None:
         """Log new games and broadcast via WebSocket."""
-        # Add diagnostic logging for Cloudflare block state
-        logger.info(
-            f"Processing game {game_data.get('gameId')}, cloudflare_block_active: {monitor.cloudflare_block_active}")
+        # Only log processing message if cloudflare_block_active is True
+        if monitor.cloudflare_block_active:
+            logger.info(
+                f"Processing game {game_data.get('gameId')}, cloudflare_block_active: {monitor.cloudflare_block_active}")
 
         # Convert crashPoint to float for logging
         crash_point = float(game_data.get('crashPoint', 0))
