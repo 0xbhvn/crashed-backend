@@ -313,7 +313,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
     Run the catchup process to fetch historical game data.
 
     Args:
-        pages: Number of pages to fetch
+        pages: Maximum number of pages to fetch
         batch_size: Batch size for concurrent requests
         game_id: A specific game ID to fetch
         start_game_id: Starting game ID for range (inclusive)
@@ -352,6 +352,16 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
         try:
             db = Database(connection_string=config.DATABASE_URL)
             logger.info("Database connection established")
+
+            # If no specific filter is set, check for the most recent game in DB
+            if not any([game_id, start_game_id, end_game_id, game_ids]):
+                last_game = db.get_last_crash_game()
+                if last_game:
+                    # Set start_game_id to the ID after the most recent one
+                    last_game_id = int(last_game.gameId)
+                    start_game_id = str(last_game_id + 1)
+                    logger.info(
+                        f"Found last game in database with ID {last_game_id}. Will fetch games with ID >= {start_game_id}")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             logger.warning("Continuing without database support")
@@ -362,27 +372,31 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
     total_saved = 0
     total_failed = 0
 
-    # Fetch data in batches
-    for page in range(1, pages + 1, batch_size):
-        # Calculate end page for this batch
-        end_page = min(page + batch_size - 1, pages)
-        pages_in_batch = end_page - page + 1
+    # Set maximum pages (in case we need to continue beyond the initial page count)
+    max_pages = 200  # API has up to 200 pages available
+    current_page = 1
+
+    # Keep fetching until we've processed all new games or reached our limit
+    while current_page <= max_pages:
+        end_current_batch = min(current_page + batch_size - 1, max_pages)
 
         logger.info(
-            f"Fetching batch {(page-1)//batch_size + 1}/{(pages+batch_size-1)//batch_size}: "
-            f"pages {page}-{end_page}"
+            f"Fetching batch {(current_page-1)//batch_size + 1}/{(min(pages, max_pages)+batch_size-1)//batch_size}: "
+            f"pages {current_page}-{end_current_batch}"
         )
 
         # Fetch pages in parallel
-        games = await fetch_games_batch(start_page=page, end_page=end_page)
+        games = await fetch_games_batch(start_page=current_page, end_page=end_current_batch)
 
         if not games:
             logger.warning(
-                f"No games found in batch (pages {page}-{end_page})")
-            continue
+                f"No games found in batch (pages {current_page}-{end_current_batch})")
+            # If no games at all, we've reached the end of available data
+            break
 
         # Filter games based on criteria
         filtered_games = []
+        original_count = len(games)
         for game in games:
             game_id_val = str(game.get('gameId', ''))
 
@@ -400,7 +414,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
 
             filtered_games.append(game)
 
-        skipped_count = len(games) - len(filtered_games)
+        skipped_count = original_count - len(filtered_games)
         if skipped_count > 0:
             logger.info(
                 f"Skipped {skipped_count} games that didn't match the filtering criteria")
@@ -408,10 +422,33 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
         games = filtered_games
         if not games:
             logger.warning(
-                f"No games matching criteria found in batch (pages {page}-{end_page})")
+                f"No games matching criteria found in batch (pages {current_page}-{end_current_batch})")
+
+            # Check if all games were filtered out because they were too old (ID < start_game_id)
+            if start_game_id and skipped_count == original_count:
+                all_too_old = True
+                for game in [g for g in games if 'gameId' in g]:  # Check original games
+                    if str(game.get('gameId', '')) >= start_game_id:
+                        all_too_old = False
+                        break
+
+                if all_too_old:
+                    logger.info(
+                        "All games have IDs lower than our start_game_id, stopping catchup")
+                    break
+
+            # Move to the next batch
+            current_page = end_current_batch + 1
+
+            # If we've reached or exceeded our initial requested page count, stop
+            # unless we're specifically filtering by start_game_id
+            if current_page > pages and not start_game_id:
+                break
+
             continue
 
-        logger.info(f"Fetched {len(games)} games from pages {page}-{end_page}")
+        logger.info(
+            f"Fetched {len(games)} games from pages {current_page}-{end_current_batch}")
         total_fetched += len(games)
 
         # Skip saving if database is not enabled
@@ -419,6 +456,14 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
             logger.info(
                 f"Database disabled, not saving games (skipped {len(games)} games)")
             total_skipped += len(games)
+
+            # Move to the next batch
+            current_page = end_current_batch + 1
+
+            # If we've reached or exceeded our initial requested page count, stop
+            if current_page > pages:
+                break
+
             continue
 
         # Save games to database
@@ -443,11 +488,11 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
                 failed_count += 1
 
         logger.info(
-            f"Saved {saved_count}/{len(games)} games from pages {page}-{end_page}")
+            f"Saved {saved_count}/{len(games)} games from pages {current_page}-{end_current_batch}")
 
         if failed_count > 0:
             logger.warning(
-                f"Failed to save {failed_count}/{len(games)} games from pages {page}-{end_page}")
+                f"Failed to save {failed_count}/{len(games)} games from pages {current_page}-{end_current_batch}")
 
         total_saved += saved_count
         total_failed += failed_count
@@ -455,6 +500,14 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
         # Early exit if we found all specific game IDs
         if target_game_ids and len(target_game_ids) == saved_count:
             logger.info(f"Found all specified game IDs, stopping catchup")
+            break
+
+        # Move to the next batch
+        current_page = end_current_batch + 1
+
+        # If we've reached or exceeded our initial requested page count
+        # and we don't have a start_game_id filter, stop
+        if current_page > pages and not start_game_id:
             break
 
     logger.info(
