@@ -117,7 +117,7 @@ The application can be configured using environment variables:
 python -m src
 
 # Run with specific command
-python -m src monitor --skip-catchup
+python -m src monitor
 
 # Run without initial catchup
 python -m src monitor --skip-catchup

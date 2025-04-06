@@ -44,13 +44,13 @@ Set additional environment variables in the Railway dashboard:
 
 ### 5. Application Configuration
 
-The application is configured with a Procfile that runs database migrations and starts the monitor with the `--skip-catchup` flag:
+The application is configured with a Procfile that runs database migrations and starts the monitor:
 
 ```bash
-web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor --skip-catchup'
+web: sh -c 'python -m src migrate upgrade --revision head && python -m src monitor'
 ```
 
-This prevents the catchup process from running during initialization, which helps avoid unnecessary API calls and database operations on startup.
+This allows the application to run the catchup process on startup, which fetches historical game data.
 
 ### 6. Run Database Migrations
 
