@@ -67,11 +67,13 @@ src/
 The application can be configured using environment variables:
 
 ### Application Environment
+
 - `ENVIRONMENT`: Set to 'development' or 'production' to determine environment-specific settings (default: empty/production)
   - In development mode, API server runs on port 8000 by default
   - In production mode, API server runs on port 3000 by default
 
 ### API Settings
+
 - `API_BASE_URL`: Base URL for the game API (default: '[https://example.com](https://example.com)')
 - `API_HISTORY_ENDPOINT`: API endpoint for crash history (default: '/api/crash/games/history')
 - `GAME_URL`: Game URL path (default: '/game/crash')
