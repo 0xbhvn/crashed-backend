@@ -20,7 +20,7 @@ except ImportError:
         return os.environ.get(key, default)
 
 # Crash API configuration
-API_BASE_URL = "https://bc.game"
+API_BASE_URL = "https://bc.fun"
 API_HISTORY_ENDPOINT = "/api/game/bet/multi/history"
 GAME_URL = "crash"  # Game URL path for crash game
 
@@ -30,9 +30,9 @@ API_HEADERS = {
     "accept-language": "en",
     "content-type": "application/json",
     "dnt": "1",
-    "origin": "https://bc.game",
+    "origin": "https://bc.fun",
     "priority": "u=1, i",
-    "referer": "https://bc.game/game/crash",
+    "referer": "https://bc.fun/game/crash",
     "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": "\"macOS\"",
@@ -132,7 +132,7 @@ def reload_config():
     global APP_NAME, APP_VERSION
 
     # API settings
-    API_BASE_URL = get_env_var('API_BASE_URL', 'https://bc.game')
+    API_BASE_URL = get_env_var('API_BASE_URL', 'https://bc.fun')
     API_HISTORY_ENDPOINT = get_env_var(
         'API_HISTORY_ENDPOINT', '/api/game/bet/multi/history')
     GAME_URL = get_env_var('GAME_URL', 'crash')
@@ -144,9 +144,9 @@ def reload_config():
         "accept-language": "en",
         "content-type": "application/json",
         "dnt": "1",
-        "origin": "https://bc.game",
+        "origin": "https://bc.fun",
         "priority": "u=1, i",
-        "referer": "https://bc.game/game/crash",
+        "referer": "https://bc.fun/game/crash",
         "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": "\"macOS\"",
