@@ -327,7 +327,13 @@ class BCCrashMonitor:
         while True:
             try:
                 # Poll and process new games
-                await self.poll_and_process()
+                new_games = await self.poll_and_process()
+
+                # If we successfully got games and were previously blocked, clear the block flag
+                if new_games and self.cloudflare_block_active:
+                    self.logger.info(
+                        "Cloudflare block cleared. Resetting block status.")
+                    self.cloudflare_block_active = False
 
                 # Determine sleep interval for the next poll based on block status
                 if self.cloudflare_block_active:
