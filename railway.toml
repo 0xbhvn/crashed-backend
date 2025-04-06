@@ -4,7 +4,7 @@ buildCommand = "pip install -r requirements.txt"
 
 [deploy]
 # Start the application without running migrations
-startCommand = "python -m src monitor --skip-catchup"
+startCommand = "python -m src monitor"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 healthcheckPort = 8080
@@ -21,4 +21,4 @@ cmds = ["python -m venv --copies /opt/venv", ". /opt/venv/bin/activate && pip in
 
 [start]
 # Start the application without running migrations
-cmd = "python -m src monitor --skip-catchup" 
+cmd = "python -m src monitor" 
