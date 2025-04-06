@@ -188,9 +188,21 @@ class BCCrashMonitor:
             # Fetch crash history from the API
             history_response = await self.fetch_crash_history()
 
-            if not history_response or 'data' not in history_response or 'items' not in history_response['data']:
-                self.logger.warning(
-                    f"No data received from API or invalid format")
+            # Check if we got an empty response due to Cloudflare block
+            # history_response will be empty when a CloudflareBlockError is caught in fetch_crash_history
+            if not history_response:
+                if self.cloudflare_block_active:
+                    self.logger.warning("Poll failed due to Cloudflare block")
+                    # If cloudflare_block_active is True, we know the error was a Cloudflare block
+                    # Let the exception bubble up to the main loop by re-raising a CloudflareBlockError
+                    raise CloudflareBlockError(
+                        "Cloudflare block detected during polling")
+                else:
+                    self.logger.warning("No data received from API")
+                    return []
+
+            if 'data' not in history_response or 'items' not in history_response['data']:
+                self.logger.warning("Invalid data format received from API")
                 return []
 
             history_data = history_response['data']['items']
@@ -294,6 +306,12 @@ class BCCrashMonitor:
                 self.logger.debug("No new crash results found")
                 return []
 
+        except CloudflareBlockError as e:
+            # Make sure the flag is set if the error bubbles up to here
+            self.cloudflare_block_active = True
+            self.logger.warning(
+                f"Cloudflare block detected during polling: {e}")
+            return []
         except Exception as e:
             self.logger.error(f"Error in poll_and_process: {e}")
             return []
@@ -303,22 +321,14 @@ class BCCrashMonitor:
         self.logger.info(
             f"Starting Crash Monitor with polling interval {self.polling_interval}s")
 
+        # Track the previous block state
+        previously_blocked = False
+
         while True:
             try:
                 # Poll and process new games
                 await self.poll_and_process()
-            except asyncio.CancelledError:
-                self.logger.info("Monitor loop cancelled")
-                break
-            except Exception as e:
-                # Determine sleep interval based on block status
-                current_sleep_interval = REDUCED_POLLING_INTERVAL if self.cloudflare_block_active else self.polling_interval
-                retry_msg = f"Retrying in {current_sleep_interval} seconds..."
-                self.logger.error(f"Error in monitor loop: {e}")
-                self.logger.info(retry_msg)
-                # Use the determined interval for sleeping after an error
-                await asyncio.sleep(current_sleep_interval)
-            else:
+
                 # Determine sleep interval for the next poll based on block status
                 if self.cloudflare_block_active:
                     sleep_interval = REDUCED_POLLING_INTERVAL
@@ -326,10 +336,9 @@ class BCCrashMonitor:
                         f"Cloudflare block active. Using reduced polling interval: {sleep_interval}s")
                 else:
                     # Check if we just recovered from a block
-                    if 'previously_blocked' not in locals() or previously_blocked:
-                        if 'previously_blocked' in locals():  # Avoid logging on first run
-                            self.logger.info(
-                                f"Cloudflare block cleared. Returning to normal polling interval: {self.polling_interval}s")
+                    if previously_blocked:
+                        self.logger.info(
+                            f"Cloudflare block cleared. Returning to normal polling interval: {self.polling_interval}s")
                     sleep_interval = self.polling_interval
 
                 # Store current block state for the next iteration's check
@@ -337,6 +346,28 @@ class BCCrashMonitor:
 
                 # Wait for the next polling interval
                 await asyncio.sleep(sleep_interval)
+
+            except asyncio.CancelledError:
+                self.logger.info("Monitor loop cancelled")
+                break
+            except CloudflareBlockError:
+                # Handle Cloudflare blocks by setting the flag and reducing the polling interval
+                self.cloudflare_block_active = True
+                sleep_interval = REDUCED_POLLING_INTERVAL
+                self.logger.warning(
+                    f"Cloudflare block detected. Reducing polling interval to {sleep_interval}s")
+                await asyncio.sleep(sleep_interval)
+            except Exception as e:
+                # For other errors, determine sleep interval based on current block status
+                current_sleep_interval = REDUCED_POLLING_INTERVAL if self.cloudflare_block_active else self.polling_interval
+                self.logger.error(f"Error in monitor loop: {e}")
+                self.logger.info(
+                    f"Retrying in {current_sleep_interval} seconds...")
+                # Use the determined interval for sleeping after an error
+                await asyncio.sleep(current_sleep_interval)
+
+            # Store current block state for the next iteration's check
+            previously_blocked = self.cloudflare_block_active
 
     def get_latest_results(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
