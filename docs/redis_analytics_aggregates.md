@@ -135,6 +135,15 @@ We've implemented Redis caching for the following endpoint groups:
 - `/api/analytics/series/without-min-crash-point/{value}`
 - `/api/analytics/series/without-min-crash-point/{value}/time`
 
+#### Intervals Endpoints
+
+- `/api/analytics/intervals/min-crash-point/{value}`
+- `/api/analytics/intervals/min-crash-point/{value}/date-range`
+- `/api/analytics/intervals/min-crash-point/{value}/game-sets`
+- `/api/analytics/intervals/min-crash-points` (POST)
+- `/api/analytics/intervals/min-crash-points/date-range` (POST)
+- `/api/analytics/intervals/min-crash-points/game-sets` (POST)
+
 ### 3.3. Handling POST Requests
 
 For POST endpoints (particularly batch requests), we use a specialized approach:
@@ -194,7 +203,6 @@ If clients are receiving outdated data:
 3. **Tiered Caching**: Implement different TTLs for different types of data (already partially implemented with REDIS_CACHE_TTL_LONG for series)
 4. **Compression**: For large responses, implement compression to reduce Redis memory usage
 5. **Cache Statistics**: Add monitoring to track hit/miss rates and optimize accordingly
-6. **Additional Endpoints**: Extend caching to intervals endpoints
 
 ## 7. Implementation Status
 
@@ -203,10 +211,10 @@ As part of the feat/redis-caching branch, we have successfully implemented Redis
 - ✅ Last Games endpoints (min/max crash points, exact floors)
 - ✅ Occurrences endpoints (min/max crash points, exact floors)
 - ✅ Series endpoints (without-min-crash-point)
-- ❌ Intervals endpoints (to be implemented)
+- ✅ Intervals endpoints (min-crash-point)
 
 Testing has confirmed significant performance improvements for all implemented endpoints, especially for computationally expensive queries.
 
 ## Note on Analytics Aggregates
 
-We've successfully implemented caching for the Last Games, Occurrences, and Series endpoints, providing immediate performance benefits. The remaining analytics endpoints (Intervals) will be addressed in a future phase to complete the caching strategy for all analytics endpoints.
+We've successfully implemented caching for all analytics endpoints, providing immediate performance benefits, particularly for computationally expensive operations like intervals and series analysis.

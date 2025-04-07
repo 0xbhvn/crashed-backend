@@ -5,13 +5,16 @@ This module defines API endpoints for analyzing game data in intervals
 to identify patterns and occurrences.
 """
 
+from ...utils.redis_keys import get_cache_version
 import logging
 import json
-from typing import Dict, Any
+import time
+from typing import Dict, Any, Tuple
 from aiohttp import web
 from datetime import datetime
 
 from ..utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER, parse_datetime
+from ...utils.redis_cache import cached_endpoint, build_key_from_match_info, build_key_with_query_param, build_hash_based_key
 from ...db.engine import Database
 from .. import analytics
 
@@ -38,73 +41,79 @@ async def get_min_crash_point_intervals(request: web.Request) -> web.Response:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get minimum crash point value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = float(value_str)
-        except ValueError:
-            return error_response(
-                f"Invalid crash point value: {value_str}. Must be a numeric value.",
-                status=400
-            )
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            interval_minutes = req.query.get('interval_minutes', '10')
+            hours = req.query.get('hours', '24')
+            return f"analytics:intervals:min:{value}:interval_minutes:{interval_minutes}:hours:{hours}:{get_cache_version()}"
 
-        # Get query parameters with defaults
-        try:
-            interval_minutes = int(request.query.get('interval_minutes', '10'))
-            if interval_minutes <= 0:
-                return error_response(
-                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid interval_minutes: {request.query.get('interval_minutes')}. Must be a positive integer.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get minimum crash point value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid crash point value: {value_str}. Must be a numeric value."}, False
 
-        try:
-            hours = int(request.query.get('hours', '24'))
-            if hours <= 0:
-                return error_response(
-                    f"Invalid hours: {hours}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid hours: {request.query.get('hours')}. Must be a positive integer.",
-                status=400
-            )
+                # Get query parameters with defaults
+                try:
+                    interval_minutes = int(
+                        req.query.get('interval_minutes', '10'))
+                    if interval_minutes <= 0:
+                        return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid interval_minutes: {req.query.get('interval_minutes')}. Must be a positive integer."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_time,
-                value, interval_minutes, hours
-            )
+                try:
+                    hours = int(req.query.get('hours', '24'))
+                    if hours <= 0:
+                        return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid hours: {req.query.get('hours')}. Must be a positive integer."}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_time,
+                        value, interval_minutes, hours
+                    )
 
-            # Convert datetime values to the requested timezone
-            for interval in intervals:
-                interval['interval_start'] = convert_datetime_to_timezone(
-                    interval['interval_start'], timezone_name)
-                interval['interval_end'] = convert_datetime_to_timezone(
-                    interval['interval_end'], timezone_name)
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'min_value': value,
-                    'interval_minutes': interval_minutes,
-                    'hours': hours,
-                    'count': len(intervals),
-                    'intervals': intervals
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for interval in intervals:
+                        interval['interval_start'] = convert_datetime_to_timezone(
+                            interval['interval_start'], timezone_name)
+                        interval['interval_end'] = convert_datetime_to_timezone(
+                            interval['interval_end'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'min_value': value,
+                            'interval_minutes': interval_minutes,
+                            'hours': hours,
+                            'count': len(intervals),
+                            'intervals': intervals
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.exception(
@@ -129,100 +138,99 @@ async def get_min_crash_point_intervals_by_date_range(request: web.Request) -> w
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get minimum crash point value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = float(value_str)
-        except ValueError:
-            return error_response(
-                f"Invalid crash point value: {value_str}. Must be a numeric value.",
-                status=400
-            )
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            start_date = req.query.get('start_date', '')
+            end_date = req.query.get('end_date', '')
+            interval_minutes = req.query.get('interval_minutes', '10')
+            return f"analytics:intervals:min:date:{value}:start:{start_date}:end:{end_date}:interval_minutes:{interval_minutes}:{get_cache_version()}"
 
-        # Get query parameters
-        start_date_str = request.query.get('start_date')
-        if not start_date_str:
-            return error_response(
-                "Missing required parameter: 'start_date'.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get minimum crash point value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid crash point value: {value_str}. Must be a numeric value."}, False
 
-        end_date_str = request.query.get('end_date')
-        if not end_date_str:
-            return error_response(
-                "Missing required parameter: 'end_date'.",
-                status=400
-            )
+                # Get query parameters
+                start_date_str = req.query.get('start_date')
+                if not start_date_str:
+                    return {"status": "error", "message": "Missing required parameter: 'start_date'."}, False
 
-        # Get timezone from request header for parsing dates
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+                end_date_str = req.query.get('end_date')
+                if not end_date_str:
+                    return {"status": "error", "message": "Missing required parameter: 'end_date'."}, False
 
-        # Parse dates
-        try:
-            start_date = parse_datetime(start_date_str, timezone_name)
-        except ValueError:
-            return error_response(
-                f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD).",
-                status=400
-            )
+                # Get timezone from request header for parsing dates
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        try:
-            end_date = parse_datetime(end_date_str, timezone_name)
-        except ValueError:
-            return error_response(
-                f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD).",
-                status=400
-            )
+                # Parse dates
+                try:
+                    start_date = parse_datetime(start_date_str, timezone_name)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD)."}, False
 
-        # Validate the date range
-        if end_date < start_date:
-            return error_response(
-                f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str}).",
-                status=400
-            )
+                try:
+                    end_date = parse_datetime(end_date_str, timezone_name)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD)."}, False
 
-        # Get interval_minutes parameter
-        try:
-            interval_minutes = int(request.query.get('interval_minutes', '10'))
-            if interval_minutes <= 0:
-                return error_response(
-                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid interval_minutes: {request.query.get('interval_minutes')}. Must be a positive integer.",
-                status=400
-            )
+                # Validate the date range
+                if end_date < start_date:
+                    return {"status": "error", "message": f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str})."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_date_range,
-                value, start_date, end_date, interval_minutes
-            )
+                # Get interval_minutes parameter
+                try:
+                    interval_minutes = int(
+                        req.query.get('interval_minutes', '10'))
+                    if interval_minutes <= 0:
+                        return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid interval_minutes: {req.query.get('interval_minutes')}. Must be a positive integer."}, False
 
-            # Convert datetime values to the requested timezone
-            for interval in intervals:
-                interval['interval_start'] = convert_datetime_to_timezone(
-                    interval['interval_start'], timezone_name)
-                interval['interval_end'] = convert_datetime_to_timezone(
-                    interval['interval_end'], timezone_name)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_date_range,
+                        value, start_date, end_date, interval_minutes
+                    )
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'min_value': value,
-                    'start_date': convert_datetime_to_timezone(start_date, timezone_name),
-                    'end_date': convert_datetime_to_timezone(end_date, timezone_name),
-                    'interval_minutes': interval_minutes,
-                    'count': len(intervals),
-                    'intervals': intervals
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for interval in intervals:
+                        interval['interval_start'] = convert_datetime_to_timezone(
+                            interval['interval_start'], timezone_name)
+                        interval['interval_end'] = convert_datetime_to_timezone(
+                            interval['interval_end'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'min_value': value,
+                            'start_date': convert_datetime_to_timezone(start_date, timezone_name),
+                            'end_date': convert_datetime_to_timezone(end_date, timezone_name),
+                            'interval_minutes': interval_minutes,
+                            'count': len(intervals),
+                            'intervals': intervals
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals_by_date_range data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for date range requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
@@ -246,73 +254,78 @@ async def get_min_crash_point_intervals_by_sets(request: web.Request) -> web.Res
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get minimum crash point value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = float(value_str)
-        except ValueError:
-            return error_response(
-                f"Invalid crash point value: {value_str}. Must be a numeric value.",
-                status=400
-            )
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            games_per_set = req.query.get('games_per_set', '10')
+            total_games = req.query.get('total_games', '1000')
+            return f"analytics:intervals:min:sets:{value}:games_per_set:{games_per_set}:total_games:{total_games}:{get_cache_version()}"
 
-        # Get query parameters with defaults
-        try:
-            games_per_set = int(request.query.get('games_per_set', '10'))
-            if games_per_set <= 0:
-                return error_response(
-                    f"Invalid games_per_set: {games_per_set}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid games_per_set: {request.query.get('games_per_set')}. Must be a positive integer.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get minimum crash point value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid crash point value: {value_str}. Must be a numeric value."}, False
 
-        try:
-            total_games = int(request.query.get('total_games', '1000'))
-            if total_games <= 0:
-                return error_response(
-                    f"Invalid total_games: {total_games}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid total_games: {request.query.get('total_games')}. Must be a positive integer.",
-                status=400
-            )
+                # Get query parameters with defaults
+                try:
+                    games_per_set = int(req.query.get('games_per_set', '10'))
+                    if games_per_set <= 0:
+                        return {"status": "error", "message": f"Invalid games_per_set: {games_per_set}. Must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid games_per_set: {req.query.get('games_per_set')}. Must be a positive integer."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_game_sets,
-                value, games_per_set, total_games
-            )
+                try:
+                    total_games = int(req.query.get('total_games', '1000'))
+                    if total_games <= 0:
+                        return {"status": "error", "message": f"Invalid total_games: {total_games}. Must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid total_games: {req.query.get('total_games')}. Must be a positive integer."}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_game_sets,
+                        value, games_per_set, total_games
+                    )
 
-            # Convert datetime values to the requested timezone
-            for interval in intervals:
-                interval['start_time'] = convert_datetime_to_timezone(
-                    interval['start_time'], timezone_name)
-                interval['end_time'] = convert_datetime_to_timezone(
-                    interval['end_time'], timezone_name)
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'min_value': value,
-                    'games_per_set': games_per_set,
-                    'total_games': total_games,
-                    'count': len(intervals),
-                    'intervals': intervals
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for interval in intervals:
+                        interval['start_time'] = convert_datetime_to_timezone(
+                            interval['start_time'], timezone_name)
+                        interval['end_time'] = convert_datetime_to_timezone(
+                            interval['end_time'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'min_value': value,
+                            'games_per_set': games_per_set,
+                            'total_games': total_games,
+                            'count': len(intervals),
+                            'intervals': intervals
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals_by_sets data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.exception(
@@ -334,99 +347,92 @@ async def get_min_crash_point_intervals_batch(request: web.Request) -> web.Respo
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("intervals:min:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request data
+                try:
+                    data = await req.json()
+                except json.JSONDecodeError:
+                    return {"status": "error", "message": "Invalid JSON in request body."}, False
 
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of float values.",
-                status=400
-            )
+                # Validate required fields
+                if 'values' not in data:
+                    return {"status": "error", "message": "Missing required field: 'values'."}, False
 
-        # Validate and convert values to floats
-        try:
-            values = [float(v) for v in values]
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain numeric values.",
-                status=400
-            )
+                values = data['values']
+                if not isinstance(values, list) or not values:
+                    return {"status": "error", "message": "Field 'values' must be a non-empty list of float values."}, False
 
-        # Get optional parameters with defaults
-        interval_minutes = data.get('interval_minutes', 10)
-        hours = data.get('hours', 24)
+                # Validate and convert values to floats
+                try:
+                    values = [float(v) for v in values]
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": "Field 'values' must contain numeric values."}, False
 
-        # Validate optional parameters
-        try:
-            interval_minutes = int(interval_minutes)
-            if interval_minutes <= 0:
-                return error_response(
-                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                    status=400
-                )
-        except (ValueError, TypeError):
-            return error_response(
-                f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                status=400
-            )
+                # Get optional parameters with defaults
+                interval_minutes = data.get('interval_minutes', 10)
+                hours = data.get('hours', 24)
 
-        try:
-            hours = int(hours)
-            if hours <= 0:
-                return error_response(
-                    f"Invalid hours: {hours}. Must be a positive integer.",
-                    status=400
-                )
-        except (ValueError, TypeError):
-            return error_response(
-                f"Invalid hours: {hours}. Must be a positive integer.",
-                status=400
-            )
+                # Validate optional parameters
+                try:
+                    interval_minutes = int(interval_minutes)
+                    if interval_minutes <= 0:
+                        return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals_by_value = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_time_batch,
-                values, interval_minutes, hours
-            )
+                try:
+                    hours = int(hours)
+                    if hours <= 0:
+                        return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals_by_value = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_time_batch,
+                        values, interval_minutes, hours
+                    )
 
-            # Convert datetime values to the requested timezone
-            for value, intervals in intervals_by_value.items():
-                for interval in intervals:
-                    interval['interval_start'] = convert_datetime_to_timezone(
-                        interval['interval_start'], timezone_name)
-                    interval['interval_end'] = convert_datetime_to_timezone(
-                        interval['interval_end'], timezone_name)
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'interval_minutes': interval_minutes,
-                    'hours': hours,
-                    'intervals_by_value': intervals_by_value
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for value, intervals in intervals_by_value.items():
+                        for interval in intervals:
+                            interval['interval_start'] = convert_datetime_to_timezone(
+                                interval['interval_start'], timezone_name)
+                            interval['interval_end'] = convert_datetime_to_timezone(
+                                interval['interval_end'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'values': values,
+                            'interval_minutes': interval_minutes,
+                            'hours': hours,
+                            'intervals_by_value': intervals_by_value
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
@@ -449,123 +455,107 @@ async def get_min_crash_point_intervals_by_date_range_batch(request: web.Request
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("intervals:min:date:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request data
+                try:
+                    data = await req.json()
+                except json.JSONDecodeError:
+                    return {"status": "error", "message": "Invalid JSON in request body."}, False
 
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of float values.",
-                status=400
-            )
+                # Validate required fields
+                if 'values' not in data:
+                    return {"status": "error", "message": "Missing required field: 'values'."}, False
 
-        # Validate and convert values to floats
-        try:
-            values = [float(v) for v in values]
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain numeric values.",
-                status=400
-            )
+                values = data['values']
+                if not isinstance(values, list) or not values:
+                    return {"status": "error", "message": "Field 'values' must be a non-empty list of float values."}, False
 
-        # Get required date parameters
-        start_date_str = data.get('start_date')
-        if not start_date_str:
-            return error_response(
-                "Missing required field: 'start_date'.",
-                status=400
-            )
+                # Validate and convert values to floats
+                try:
+                    values = [float(v) for v in values]
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": "Field 'values' must contain numeric values."}, False
 
-        end_date_str = data.get('end_date')
-        if not end_date_str:
-            return error_response(
-                "Missing required field: 'end_date'.",
-                status=400
-            )
+                # Get required date parameters
+                start_date_str = data.get('start_date')
+                if not start_date_str:
+                    return {"status": "error", "message": "Missing required field: 'start_date'."}, False
 
-        # Get timezone from request header for parsing dates
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+                end_date_str = data.get('end_date')
+                if not end_date_str:
+                    return {"status": "error", "message": "Missing required field: 'end_date'."}, False
 
-        # Parse dates
-        try:
-            start_date = parse_datetime(start_date_str, timezone_name)
-        except ValueError:
-            return error_response(
-                f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD).",
-                status=400
-            )
+                # Get timezone from request header for parsing dates
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        try:
-            end_date = parse_datetime(end_date_str, timezone_name)
-        except ValueError:
-            return error_response(
-                f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD).",
-                status=400
-            )
+                # Parse dates
+                try:
+                    start_date = parse_datetime(start_date_str, timezone_name)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid start_date: {start_date_str}. Must be in ISO format (YYYY-MM-DD)."}, False
 
-        # Validate the date range
-        if end_date < start_date:
-            return error_response(
-                f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str}).",
-                status=400
-            )
+                try:
+                    end_date = parse_datetime(end_date_str, timezone_name)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid end_date: {end_date_str}. Must be in ISO format (YYYY-MM-DD)."}, False
 
-        # Get interval_minutes parameter
-        interval_minutes = data.get('interval_minutes', 10)
-        try:
-            interval_minutes = int(interval_minutes)
-            if interval_minutes <= 0:
-                return error_response(
-                    f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                    status=400
-                )
-        except (ValueError, TypeError):
-            return error_response(
-                f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer.",
-                status=400
-            )
+                # Validate the date range
+                if end_date < start_date:
+                    return {"status": "error", "message": f"Invalid date range: end_date ({end_date_str}) must be after start_date ({start_date_str})."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals_by_value = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_date_range_batch,
-                values, start_date, end_date, interval_minutes
-            )
+                # Get interval_minutes parameter
+                interval_minutes = data.get('interval_minutes', 10)
+                try:
+                    interval_minutes = int(interval_minutes)
+                    if interval_minutes <= 0:
+                        return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": f"Invalid interval_minutes: {interval_minutes}. Must be a positive integer."}, False
 
-            # Convert datetime values to the requested timezone
-            for value, intervals in intervals_by_value.items():
-                for interval in intervals:
-                    interval['interval_start'] = convert_datetime_to_timezone(
-                        interval['interval_start'], timezone_name)
-                    interval['interval_end'] = convert_datetime_to_timezone(
-                        interval['interval_end'], timezone_name)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals_by_value = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_date_range_batch,
+                        values, start_date, end_date, interval_minutes
+                    )
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'start_date': convert_datetime_to_timezone(start_date, timezone_name),
-                    'end_date': convert_datetime_to_timezone(end_date, timezone_name),
-                    'interval_minutes': interval_minutes,
-                    'intervals_by_value': intervals_by_value
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for value, intervals in intervals_by_value.items():
+                        for interval in intervals:
+                            interval['interval_start'] = convert_datetime_to_timezone(
+                                interval['interval_start'], timezone_name)
+                            interval['interval_end'] = convert_datetime_to_timezone(
+                                interval['interval_end'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'values': values,
+                            'start_date': convert_datetime_to_timezone(start_date, timezone_name),
+                            'end_date': convert_datetime_to_timezone(end_date, timezone_name),
+                            'interval_minutes': interval_minutes,
+                            'intervals_by_value': intervals_by_value
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals_by_date_range_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
@@ -587,101 +577,96 @@ async def get_min_crash_point_intervals_by_sets_batch(request: web.Request) -> w
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("intervals:min:sets:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request data
+                try:
+                    data = await req.json()
+                except json.JSONDecodeError:
+                    return {"status": "error", "message": "Invalid JSON in request body."}, False
 
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of float values.",
-                status=400
-            )
+                # Validate required fields
+                if 'values' not in data:
+                    return {"status": "error", "message": "Missing required field: 'values'."}, False
 
-        # Validate and convert values to floats
-        try:
-            values = [float(v) for v in values]
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain numeric values.",
-                status=400
-            )
+                values = data['values']
+                if not isinstance(values, list) or not values:
+                    return {"status": "error", "message": "Field 'values' must be a non-empty list of float values."}, False
 
-        # Get optional parameters with defaults
-        games_per_set = data.get('games_per_set', 10)
-        total_games = data.get('total_games', 1000)
+                # Validate and convert values to floats
+                try:
+                    values = [float(v) for v in values]
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": "Field 'values' must contain numeric values."}, False
 
-        # Validate optional parameters
-        try:
-            games_per_set = int(games_per_set)
-            if games_per_set <= 0:
-                return error_response(
-                    f"Invalid games_per_set: {games_per_set}. Must be a positive integer.",
-                    status=400
-                )
-        except (ValueError, TypeError):
-            return error_response(
-                f"Invalid games_per_set: {games_per_set}. Must be a positive integer.",
-                status=400
-            )
+                # Get optional parameters with defaults
+                games_per_set = data.get('games_per_set', 10)
+                total_games = data.get('total_games', 1000)
 
-        try:
-            total_games = int(total_games)
-            if total_games <= 0:
-                return error_response(
-                    f"Invalid total_games: {total_games}. Must be a positive integer.",
-                    status=400
-                )
-        except (ValueError, TypeError):
-            return error_response(
-                f"Invalid total_games: {total_games}. Must be a positive integer.",
-                status=400
-            )
+                # Validate optional parameters
+                try:
+                    games_per_set = int(games_per_set)
+                    if games_per_set <= 0:
+                        return {"status": "error", "message": f"Invalid games_per_set: {games_per_set}. Must be a positive integer."}, False
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": f"Invalid games_per_set: {games_per_set}. Must be a positive integer."}, False
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get interval data
-            intervals_by_value = await db.run_sync(
-                analytics.get_min_crash_point_intervals_by_game_sets_batch,
-                values, games_per_set, total_games
-            )
+                try:
+                    total_games = int(total_games)
+                    if total_games <= 0:
+                        return {"status": "error", "message": f"Invalid total_games: {total_games}. Must be a positive integer."}, False
+                except (ValueError, TypeError):
+                    return {"status": "error", "message": f"Invalid total_games: {total_games}. Must be a positive integer."}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get interval data
+                    intervals_by_value = await db.run_sync(
+                        analytics.get_min_crash_point_intervals_by_game_sets_batch,
+                        values, games_per_set, total_games
+                    )
 
-            # Convert datetime values to the requested timezone
-            for value, intervals in intervals_by_value.items():
-                for interval in intervals:
-                    interval['start_time'] = convert_datetime_to_timezone(
-                        interval['start_time'], timezone_name)
-                    interval['end_time'] = convert_datetime_to_timezone(
-                        interval['end_time'], timezone_name)
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'games_per_set': games_per_set,
-                    'total_games': total_games,
-                    'intervals_by_value': intervals_by_value
-                }
-            })
+                    # Convert datetime values to the requested timezone
+                    for value, intervals in intervals_by_value.items():
+                        for interval in intervals:
+                            interval['start_time'] = convert_datetime_to_timezone(
+                                interval['start_time'], timezone_name)
+                            interval['end_time'] = convert_datetime_to_timezone(
+                                interval['end_time'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'values': values,
+                            'games_per_set': games_per_set,
+                            'total_games': total_games,
+                            'intervals_by_value': intervals_by_value
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_intervals_by_sets_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
             f"Error in get_min_crash_point_intervals_by_sets_batch: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
+
+# Import at the end to avoid circular import issues
