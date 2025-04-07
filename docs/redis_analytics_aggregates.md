@@ -191,10 +191,21 @@ If clients are receiving outdated data:
 
 1. **Selective Precomputation**: Identify the most frequently accessed analytics and precompute only those
 2. **Smarter Invalidation**: Develop more targeted cache invalidation that only removes affected data
-3. **Tiered Caching**: Implement different TTLs for different types of data
+3. **Tiered Caching**: Implement different TTLs for different types of data (already partially implemented with REDIS_CACHE_TTL_LONG for series)
 4. **Compression**: For large responses, implement compression to reduce Redis memory usage
 5. **Cache Statistics**: Add monitoring to track hit/miss rates and optimize accordingly
 6. **Additional Endpoints**: Extend caching to intervals endpoints
+
+## 7. Implementation Status
+
+As part of the feat/redis-caching branch, we have successfully implemented Redis caching for:
+
+- ✅ Last Games endpoints (min/max crash points, exact floors)
+- ✅ Occurrences endpoints (min/max crash points, exact floors)
+- ✅ Series endpoints (without-min-crash-point)
+- ❌ Intervals endpoints (to be implemented)
+
+Testing has confirmed significant performance improvements for all implemented endpoints, especially for computationally expensive queries.
 
 ## Note on Analytics Aggregates
 
