@@ -78,12 +78,19 @@ We store the complete API response as a JSON string with added cache metadata:
 
 ### 2.3. TTL Strategy
 
-We set appropriate TTLs based on the configuration:
+Our Redis caching implementation uses a tiered TTL (Time-To-Live) strategy:
 
-- **Short-lived analytics** (e.g., Last Games): `REDIS_CACHE_TTL_SHORT` (default: 30 seconds)
-- **Longer-lived analytics** (e.g., Occurrences, Intervals): `REDIS_CACHE_TTL_LONG` (default: 120 seconds)
+- **Short-lived analytics (REDIS_CACHE_TTL_SHORT = 30s)**: For simple, frequently accessed endpoints that return recent data
+  - Single-value GET endpoints with small datasets (e.g., `/api/analytics/last-game/min-crash-point/{value}`)
+  - Endpoints where data freshness is more important than computational savings
 
-Batch requests for occurrences use the `REDIS_CACHE_TTL_LONG` setting since they typically involve more computation and are less likely to change frequently.
+- **Longer-lived analytics (REDIS_CACHE_TTL_LONG = 120s)**: For computationally expensive operations
+  - Batch POST requests that process multiple values
+  - Endpoints that analyze large datasets (e.g., series analysis)
+  - Date range queries and historical analysis
+  - Game-sets analysis that requires grouping large numbers of games
+
+This tiered approach balances the need for data freshness with computational efficiency. The TTL values can be adjusted in the configuration based on application needs, traffic patterns, and server load.
 
 ### 2.4. Cache Invalidation
 

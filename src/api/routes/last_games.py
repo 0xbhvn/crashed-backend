@@ -256,8 +256,9 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
                     f"Error in get_last_games_min_crash_points data_fetcher: {str(e)}")
                 return {"status": "error", "message": "Internal server error"}, False
 
-        # Use cached_endpoint utility
-        return await cached_endpoint(request, key_builder, data_fetcher)
+        # Use cached_endpoint utility with longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_min_crash_points: {str(e)}")
@@ -343,8 +344,9 @@ async def get_last_games_exact_floors(request: web.Request) -> web.Response:
                     f"Error in get_last_games_exact_floors data_fetcher: {str(e)}")
                 return {"status": "error", "message": "Internal server error"}, False
 
-        # Use cached_endpoint utility
-        return await cached_endpoint(request, key_builder, data_fetcher)
+        # Use cached_endpoint utility with longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_exact_floors: {str(e)}")
@@ -507,8 +509,9 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
                     f"Error in get_last_games_max_crash_points data_fetcher: {str(e)}")
                 return {"status": "error", "message": "Internal server error"}, False
 
-        # Use cached_endpoint utility
-        return await cached_endpoint(request, key_builder, data_fetcher)
+        # Use cached_endpoint utility with longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_max_crash_points: {str(e)}")

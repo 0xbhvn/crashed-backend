@@ -324,8 +324,9 @@ async def get_min_crash_point_intervals_by_sets(request: web.Request) -> web.Res
                     f"Error in get_min_crash_point_intervals_by_sets data_fetcher: {str(e)}")
                 return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
 
-        # Use cached_endpoint utility
-        return await cached_endpoint(request, key_builder, data_fetcher)
+        # Use cached_endpoint utility with a longer TTL for game-sets requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
