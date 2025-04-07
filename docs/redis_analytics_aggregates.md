@@ -130,6 +130,11 @@ We've implemented Redis caching for the following endpoint groups:
 - `/api/analytics/occurrences/exact-floors/batch` (POST)
 - `/api/analytics/occurrences/max-crash-points/batch` (POST)
 
+#### Series Endpoints
+
+- `/api/analytics/series/without-min-crash-point/{value}`
+- `/api/analytics/series/without-min-crash-point/{value}/time`
+
 ### 3.3. Handling POST Requests
 
 For POST endpoints (particularly batch requests), we use a specialized approach:
@@ -189,8 +194,8 @@ If clients are receiving outdated data:
 3. **Tiered Caching**: Implement different TTLs for different types of data
 4. **Compression**: For large responses, implement compression to reduce Redis memory usage
 5. **Cache Statistics**: Add monitoring to track hit/miss rates and optimize accordingly
-6. **Additional Endpoints**: Extend caching to intervals and series endpoints
+6. **Additional Endpoints**: Extend caching to intervals endpoints
 
 ## Note on Analytics Aggregates
 
-We've successfully implemented caching for the Last Games and Occurrences endpoints, providing immediate performance benefits. The remaining analytics endpoints (Intervals, Series) will be addressed in a future phase to complete the caching strategy for all analytics endpoints.
+We've successfully implemented caching for the Last Games, Occurrences, and Series endpoints, providing immediate performance benefits. The remaining analytics endpoints (Intervals) will be addressed in a future phase to complete the caching strategy for all analytics endpoints.
