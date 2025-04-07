@@ -5,12 +5,15 @@ This module defines API endpoints for analyzing the frequency of games
 meeting various crash point criteria.
 """
 
+from ...utils.redis_keys import get_cache_version
 import logging
 import json
-from typing import Dict, Any, List
+import time
+from typing import Dict, Any, List, Tuple
 from aiohttp import web
 
 from ..utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER
+from ...utils.redis_cache import cached_endpoint, build_key_from_match_info, build_key_with_query_param, build_hash_based_key
 from ...db.engine import Database
 from ..analytics import occurrences
 
@@ -38,92 +41,101 @@ async def get_min_crash_point_occurrences(request: web.Request) -> web.Response:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get minimum crash point value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = float(value_str)
-        except ValueError:
-            return error_response(
-                f"Invalid crash point value: {value_str}. Must be a numeric value.",
-                status=400
-            )
-
-        # Check if analysis should be by time
-        by_time_str = request.query.get('by_time', 'false').lower()
-        by_time = by_time_str in ('true', '1', 'yes')
-
-        # Get query parameters with defaults
-        if by_time:
-            try:
-                hours = int(request.query.get('hours', '1'))
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid hours: {request.query.get('hours')}. Must be a positive integer.",
-                    status=400
-                )
-        else:
-            try:
-                games = int(request.query.get('games', '100'))
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid games: {request.query.get('games')}. Must be a positive integer.",
-                    status=400
-                )
-
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            by_time = req.query.get(
+                'by_time', 'false').lower() in ('true', '1', 'yes')
             if by_time:
-                data = await db.run_sync(
-                    occurrences.get_min_crash_point_occurrences_by_time,
-                    value, hours
-                )
+                hours = req.query.get('hours', '1')
+                return f"analytics:occurrences:min:{value}:by_time:true:hours:{hours}:{get_cache_version()}"
             else:
-                data = await db.run_sync(
-                    occurrences.get_min_crash_point_occurrences_by_games,
-                    value, games
-                )
+                games = req.query.get('games', '100')
+                return f"analytics:occurrences:min:{value}:by_time:false:games:{games}:{get_cache_version()}"
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get minimum crash point value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid crash point value: {value_str}. Must be a numeric value."}, False
 
-            # Convert datetime values to the requested timezone
-            if by_time:
-                data['start_time'] = convert_datetime_to_timezone(
-                    data['start_time'], timezone_name)
-                data['end_time'] = convert_datetime_to_timezone(
-                    data['end_time'], timezone_name)
-            else:
-                data['first_game_time'] = convert_datetime_to_timezone(
-                    data['first_game_time'], timezone_name)
-                data['last_game_time'] = convert_datetime_to_timezone(
-                    data['last_game_time'], timezone_name)
+                # Check if analysis should be by time
+                by_time_str = req.query.get('by_time', 'false').lower()
+                by_time = by_time_str in ('true', '1', 'yes')
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'min_value': value,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'occurrences': data
-                }
-            })
+                # Get query parameters with defaults
+                if by_time:
+                    try:
+                        hours = int(req.query.get('hours', '1'))
+                        if hours <= 0:
+                            return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid hours: {req.query.get('hours')}. Must be a positive integer."}, False
+                else:
+                    try:
+                        games = int(req.query.get('games', '100'))
+                        if games <= 0:
+                            return {"status": "error", "message": f"Invalid games: {games}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid games: {req.query.get('games')}. Must be a positive integer."}, False
+
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrence data
+                    if by_time:
+                        data = await db.run_sync(
+                            occurrences.get_min_crash_point_occurrences_by_time,
+                            value, hours
+                        )
+                    else:
+                        data = await db.run_sync(
+                            occurrences.get_min_crash_point_occurrences_by_games,
+                            value, games
+                        )
+
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
+
+                    # Convert datetime values to the requested timezone
+                    if by_time:
+                        data['start_time'] = convert_datetime_to_timezone(
+                            data['start_time'], timezone_name)
+                        data['end_time'] = convert_datetime_to_timezone(
+                            data['end_time'], timezone_name)
+                    else:
+                        data['first_game_time'] = convert_datetime_to_timezone(
+                            data['first_game_time'], timezone_name)
+                        data['last_game_time'] = convert_datetime_to_timezone(
+                            data['last_game_time'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'min_value': value,
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'occurrences': data
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_occurrences data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
-        logger.exception(
-            f"Error in get_min_crash_point_occurrences: {str(e)}")
+        logger.exception(f"Error in get_min_crash_point_occurrences: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
 
 
@@ -144,92 +156,101 @@ async def get_max_crash_point_occurrences(request: web.Request) -> web.Response:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get maximum crash point value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = float(value_str)
-        except ValueError:
-            return error_response(
-                f"Invalid crash point value: {value_str}. Must be a numeric value.",
-                status=400
-            )
-
-        # Check if analysis should be by time
-        by_time_str = request.query.get('by_time', 'false').lower()
-        by_time = by_time_str in ('true', '1', 'yes')
-
-        # Get query parameters with defaults
-        if by_time:
-            try:
-                hours = int(request.query.get('hours', '1'))
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid hours: {request.query.get('hours')}. Must be a positive integer.",
-                    status=400
-                )
-        else:
-            try:
-                games = int(request.query.get('games', '100'))
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid games: {request.query.get('games')}. Must be a positive integer.",
-                    status=400
-                )
-
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            by_time = req.query.get(
+                'by_time', 'false').lower() in ('true', '1', 'yes')
             if by_time:
-                data = await db.run_sync(
-                    occurrences.get_max_crash_point_occurrences_by_time,
-                    value, hours
-                )
+                hours = req.query.get('hours', '1')
+                return f"analytics:occurrences:max:{value}:by_time:true:hours:{hours}:{get_cache_version()}"
             else:
-                data = await db.run_sync(
-                    occurrences.get_max_crash_point_occurrences_by_games,
-                    value, games
-                )
+                games = req.query.get('games', '100')
+                return f"analytics:occurrences:max:{value}:by_time:false:games:{games}:{get_cache_version()}"
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get maximum crash point value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = float(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid crash point value: {value_str}. Must be a numeric value."}, False
 
-            # Convert datetime values to the requested timezone
-            if by_time:
-                data['start_time'] = convert_datetime_to_timezone(
-                    data['start_time'], timezone_name)
-                data['end_time'] = convert_datetime_to_timezone(
-                    data['end_time'], timezone_name)
-            else:
-                data['first_game_time'] = convert_datetime_to_timezone(
-                    data['first_game_time'], timezone_name)
-                data['last_game_time'] = convert_datetime_to_timezone(
-                    data['last_game_time'], timezone_name)
+                # Check if analysis should be by time
+                by_time_str = req.query.get('by_time', 'false').lower()
+                by_time = by_time_str in ('true', '1', 'yes')
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'max_value': value,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'occurrences': data
-                }
-            })
+                # Get query parameters with defaults
+                if by_time:
+                    try:
+                        hours = int(req.query.get('hours', '1'))
+                        if hours <= 0:
+                            return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid hours: {req.query.get('hours')}. Must be a positive integer."}, False
+                else:
+                    try:
+                        games = int(req.query.get('games', '100'))
+                        if games <= 0:
+                            return {"status": "error", "message": f"Invalid games: {games}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid games: {req.query.get('games')}. Must be a positive integer."}, False
+
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrence data
+                    if by_time:
+                        data = await db.run_sync(
+                            occurrences.get_max_crash_point_occurrences_by_time,
+                            value, hours
+                        )
+                    else:
+                        data = await db.run_sync(
+                            occurrences.get_max_crash_point_occurrences_by_games,
+                            value, games
+                        )
+
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
+
+                    # Convert datetime values to the requested timezone
+                    if by_time:
+                        data['start_time'] = convert_datetime_to_timezone(
+                            data['start_time'], timezone_name)
+                        data['end_time'] = convert_datetime_to_timezone(
+                            data['end_time'], timezone_name)
+                    else:
+                        data['first_game_time'] = convert_datetime_to_timezone(
+                            data['first_game_time'], timezone_name)
+                        data['last_game_time'] = convert_datetime_to_timezone(
+                            data['last_game_time'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'max_value': value,
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'occurrences': data
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_max_crash_point_occurrences data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
-        logger.exception(
-            f"Error in get_max_crash_point_occurrences: {str(e)}")
+        logger.exception(f"Error in get_max_crash_point_occurrences: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
 
 
@@ -250,238 +271,209 @@ async def get_exact_floor_occurrences(request: web.Request) -> web.Response:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get floor value from the path parameter
-        value_str = request.match_info['value']
-        try:
-            value = int(value_str)
-            if value < 1:
-                return error_response(
-                    f"Invalid floor value: {value}. Must be a positive integer.",
-                    status=400
-                )
-        except ValueError:
-            return error_response(
-                f"Invalid floor value: {value_str}. Must be an integer.",
-                status=400
-            )
-
-        # Check if analysis should be by time
-        by_time_str = request.query.get('by_time', 'false').lower()
-        by_time = by_time_str in ('true', '1', 'yes')
-
-        # Get query parameters with defaults
-        if by_time:
-            try:
-                hours = int(request.query.get('hours', '1'))
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid hours: {request.query.get('hours')}. Must be a positive integer.",
-                    status=400
-                )
-        else:
-            try:
-                games = int(request.query.get('games', '100'))
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except ValueError:
-                return error_response(
-                    f"Invalid games: {request.query.get('games')}. Must be a positive integer.",
-                    status=400
-                )
-
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
+        # Define key builder function
+        def key_builder(req: web.Request) -> str:
+            value = req.match_info['value']
+            by_time = req.query.get(
+                'by_time', 'false').lower() in ('true', '1', 'yes')
             if by_time:
-                data = await db.run_sync(
-                    occurrences.get_exact_floor_occurrences_by_time,
-                    value, hours
-                )
+                hours = req.query.get('hours', '1')
+                return f"analytics:occurrences:floor:{value}:by_time:true:hours:{hours}:{get_cache_version()}"
             else:
-                data = await db.run_sync(
-                    occurrences.get_exact_floor_occurrences_by_games,
-                    value, games
-                )
+                games = req.query.get('games', '100')
+                return f"analytics:occurrences:floor:{value}:by_time:false:games:{games}:{get_cache_version()}"
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get floor value from the path parameter
+                value_str = req.match_info['value']
+                try:
+                    value = int(value_str)
+                except ValueError:
+                    return {"status": "error", "message": f"Invalid floor value: {value_str}. Must be an integer."}, False
 
-            # Convert datetime values to the requested timezone
-            if by_time:
-                data['start_time'] = convert_datetime_to_timezone(
-                    data['start_time'], timezone_name)
-                data['end_time'] = convert_datetime_to_timezone(
-                    data['end_time'], timezone_name)
-            else:
-                data['first_game_time'] = convert_datetime_to_timezone(
-                    data['first_game_time'], timezone_name)
-                data['last_game_time'] = convert_datetime_to_timezone(
-                    data['last_game_time'], timezone_name)
+                # Check if analysis should be by time
+                by_time_str = req.query.get('by_time', 'false').lower()
+                by_time = by_time_str in ('true', '1', 'yes')
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'floor_value': value,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'occurrences': data
-                }
-            })
+                # Get query parameters with defaults
+                if by_time:
+                    try:
+                        hours = int(req.query.get('hours', '1'))
+                        if hours <= 0:
+                            return {"status": "error", "message": f"Invalid hours: {hours}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid hours: {req.query.get('hours')}. Must be a positive integer."}, False
+                else:
+                    try:
+                        games = int(req.query.get('games', '100'))
+                        if games <= 0:
+                            return {"status": "error", "message": f"Invalid games: {games}. Must be a positive integer."}, False
+                    except ValueError:
+                        return {"status": "error", "message": f"Invalid games: {req.query.get('games')}. Must be a positive integer."}, False
+
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrence data
+                    if by_time:
+                        data = await db.run_sync(
+                            occurrences.get_exact_floor_occurrences_by_time,
+                            value, hours
+                        )
+                    else:
+                        data = await db.run_sync(
+                            occurrences.get_exact_floor_occurrences_by_games,
+                            value, games
+                        )
+
+                    # Get timezone from request header
+                    timezone_name = req.headers.get(TIMEZONE_HEADER)
+
+                    # Convert datetime values to the requested timezone
+                    if by_time:
+                        data['start_time'] = convert_datetime_to_timezone(
+                            data['start_time'], timezone_name)
+                        data['end_time'] = convert_datetime_to_timezone(
+                            data['end_time'], timezone_name)
+                    else:
+                        data['first_game_time'] = convert_datetime_to_timezone(
+                            data['first_game_time'], timezone_name)
+                        data['last_game_time'] = convert_datetime_to_timezone(
+                            data['last_game_time'], timezone_name)
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'floor_value': value,
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'occurrences': data
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_exact_floor_occurrences data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
-        logger.exception(
-            f"Error in get_exact_floor_occurrences: {str(e)}")
+        logger.exception(f"Error in get_exact_floor_occurrences: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
 
 
 @routes.post('/api/analytics/occurrences/min-crash-points/batch')
 async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Response:
     """
-    Get the total occurrences of crash points >= specified values.
+    Get occurrences for multiple minimum crash point values in a batch.
 
-    Request Body:
-        values (List[float]): List of minimum crash point values
-        games (int, optional): Number of recent games to analyze (default: 100)
-        hours (int, optional): Number of hours to analyze (default: 1)
-        by_time (bool, optional): Whether to analyze by time (default: false)
-        comparison (bool, optional): Whether to include comparison with previous period (default: true)
+    Request body:
+        {
+            "values": [float, ...],  # List of minimum crash point values
+            "games": int,            # Optional: Number of games to analyze (default: 100)
+            "hours": int,            # Optional: Number of hours to analyze
+            "by_time": bool          # Optional: Whether to analyze by time (default: false)
+        }
 
     Headers:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("occurrences:min:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
-
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of float values.",
-                status=400
-            )
-
-        # Validate and convert values to floats
-        try:
-            values = [float(v) for v in values]
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain numeric values.",
-                status=400
-            )
-
-        # Get optional parameters with defaults
-        by_time = data.get('by_time', False)
-        comparison = data.get('comparison', True)
-
-        # Check and validate parameters based on analysis type
-        if by_time:
-            hours = data.get('hours', 1)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
             try:
-                hours = int(hours)
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid hours: {hours}. Must be a positive integer.",
-                    status=400
-                )
-            games = None
-        else:
-            games = data.get('games', 100)
-            try:
-                games = int(games)
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid games: {games}. Must be a positive integer.",
-                    status=400
-                )
-            hours = None
+                # Parse request body
+                body = await req.json()
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
-            if by_time:
-                results = await db.run_sync(
-                    occurrences.get_min_crash_point_occurrences_by_time_batch,
-                    values, hours, comparison
-                )
-            else:
-                results = await db.run_sync(
-                    occurrences.get_min_crash_point_occurrences_by_games_batch,
-                    values, games, comparison
-                )
+                # Validate values
+                values = body.get('values', [])
+                if not values:
+                    return {"status": "error", "message": "No values provided"}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                try:
+                    # Convert all values to float
+                    values = [float(v) for v in values]
+                except ValueError:
+                    return {"status": "error", "message": "All values must be numeric"}, False
 
-            # Convert datetime values to the requested timezone
-            for value_data in results.values():
+                # Check if analysis should be by time
+                by_time = body.get('by_time', False)
+
+                # Get parameters with defaults
                 if by_time:
-                    value_data['start_time'] = convert_datetime_to_timezone(
-                        value_data['start_time'], timezone_name)
-                    value_data['end_time'] = convert_datetime_to_timezone(
-                        value_data['end_time'], timezone_name)
-
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['start_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['start_time'], timezone_name)
-                        value_data['comparison']['end_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['end_time'], timezone_name)
+                    hours = body.get('hours', 1)
+                    if not isinstance(hours, int) or hours <= 0:
+                        return {"status": "error", "message": "Hours must be a positive integer"}, False
                 else:
-                    value_data['first_game_time'] = convert_datetime_to_timezone(
-                        value_data['first_game_time'], timezone_name)
-                    value_data['last_game_time'] = convert_datetime_to_timezone(
-                        value_data['last_game_time'], timezone_name)
+                    games = body.get('games', 100)
+                    if not isinstance(games, int) or games <= 0:
+                        return {"status": "error", "message": "Games must be a positive integer"}, False
 
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['first_game_time'], timezone_name)
-                        value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['last_game_time'], timezone_name)
+                # Get timezone from header
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'comparison': comparison,
-                    'occurrences': results
-                }
-            })
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrences for each value
+                    results = {}
+
+                    for value in values:
+                        if by_time:
+                            data = await db.run_sync(
+                                occurrences.get_min_crash_point_occurrences_by_time,
+                                value, hours
+                            )
+                            # Convert datetime values
+                            data['start_time'] = convert_datetime_to_timezone(
+                                data['start_time'], timezone_name)
+                            data['end_time'] = convert_datetime_to_timezone(
+                                data['end_time'], timezone_name)
+                        else:
+                            data = await db.run_sync(
+                                occurrences.get_min_crash_point_occurrences_by_games,
+                                value, games
+                            )
+                            # Convert datetime values
+                            data['first_game_time'] = convert_datetime_to_timezone(
+                                data['first_game_time'], timezone_name)
+                            data['last_game_time'] = convert_datetime_to_timezone(
+                                data['last_game_time'], timezone_name)
+
+                        results[str(value)] = data
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'results': results
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except json.JSONDecodeError:
+                return {"status": "error", "message": "Invalid JSON in request body"}, False
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_min_crash_point_occurrences_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
@@ -492,147 +484,108 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
 @routes.post('/api/analytics/occurrences/exact-floors/batch')
 async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Response:
     """
-    Get the total occurrences of exact floor values.
+    Get occurrences for multiple exact floor values in a batch.
 
-    Request Body:
-        values (List[int]): List of floor values
-        games (int, optional): Number of recent games to analyze (default: 100)
-        hours (int, optional): Number of hours to analyze (default: 1)
-        by_time (bool, optional): Whether to analyze by time (default: false)
-        comparison (bool, optional): Whether to include comparison with previous period (default: true)
+    Request body:
+        {
+            "values": [int, ...],    # List of floor values
+            "games": int,            # Optional: Number of games to analyze (default: 100)
+            "hours": int,            # Optional: Number of hours to analyze
+            "by_time": bool          # Optional: Whether to analyze by time (default: false)
+        }
 
     Headers:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("occurrences:floor:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
-
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of integer values.",
-                status=400
-            )
-
-        # Validate and convert values to integers
-        try:
-            values = [int(v) for v in values]
-            for v in values:
-                if v < 1:
-                    return error_response(
-                        f"Invalid floor value: {v}. Must be a positive integer.",
-                        status=400
-                    )
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain integer values.",
-                status=400
-            )
-
-        # Get optional parameters with defaults
-        by_time = data.get('by_time', False)
-        comparison = data.get('comparison', True)
-
-        # Check and validate parameters based on analysis type
-        if by_time:
-            hours = data.get('hours', 1)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
             try:
-                hours = int(hours)
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid hours: {hours}. Must be a positive integer.",
-                    status=400
-                )
-            games = None
-        else:
-            games = data.get('games', 100)
-            try:
-                games = int(games)
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid games: {games}. Must be a positive integer.",
-                    status=400
-                )
-            hours = None
+                # Parse request body
+                body = await req.json()
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
-            if by_time:
-                results = await db.run_sync(
-                    occurrences.get_exact_floor_occurrences_by_time_batch,
-                    values, hours, comparison
-                )
-            else:
-                results = await db.run_sync(
-                    occurrences.get_exact_floor_occurrences_by_games_batch,
-                    values, games, comparison
-                )
+                # Validate values
+                values = body.get('values', [])
+                if not values:
+                    return {"status": "error", "message": "No values provided"}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                try:
+                    # Convert all values to int
+                    values = [int(v) for v in values]
+                except ValueError:
+                    return {"status": "error", "message": "All values must be integers"}, False
 
-            # Convert datetime values to the requested timezone
-            for value_data in results.values():
+                # Check if analysis should be by time
+                by_time = body.get('by_time', False)
+
+                # Get parameters with defaults
                 if by_time:
-                    value_data['start_time'] = convert_datetime_to_timezone(
-                        value_data['start_time'], timezone_name)
-                    value_data['end_time'] = convert_datetime_to_timezone(
-                        value_data['end_time'], timezone_name)
-
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['start_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['start_time'], timezone_name)
-                        value_data['comparison']['end_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['end_time'], timezone_name)
+                    hours = body.get('hours', 1)
+                    if not isinstance(hours, int) or hours <= 0:
+                        return {"status": "error", "message": "Hours must be a positive integer"}, False
                 else:
-                    value_data['first_game_time'] = convert_datetime_to_timezone(
-                        value_data['first_game_time'], timezone_name)
-                    value_data['last_game_time'] = convert_datetime_to_timezone(
-                        value_data['last_game_time'], timezone_name)
+                    games = body.get('games', 100)
+                    if not isinstance(games, int) or games <= 0:
+                        return {"status": "error", "message": "Games must be a positive integer"}, False
 
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['first_game_time'], timezone_name)
-                        value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['last_game_time'], timezone_name)
+                # Get timezone from header
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'comparison': comparison,
-                    'occurrences': results
-                }
-            })
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrences for each value
+                    results = {}
+
+                    for value in values:
+                        if by_time:
+                            data = await db.run_sync(
+                                occurrences.get_exact_floor_occurrences_by_time,
+                                value, hours
+                            )
+                            # Convert datetime values
+                            data['start_time'] = convert_datetime_to_timezone(
+                                data['start_time'], timezone_name)
+                            data['end_time'] = convert_datetime_to_timezone(
+                                data['end_time'], timezone_name)
+                        else:
+                            data = await db.run_sync(
+                                occurrences.get_exact_floor_occurrences_by_games,
+                                value, games
+                            )
+                            # Convert datetime values
+                            data['first_game_time'] = convert_datetime_to_timezone(
+                                data['first_game_time'], timezone_name)
+                            data['last_game_time'] = convert_datetime_to_timezone(
+                                data['last_game_time'], timezone_name)
+
+                        results[str(value)] = data
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'results': results
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except json.JSONDecodeError:
+                return {"status": "error", "message": "Invalid JSON in request body"}, False
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_exact_floor_occurrences_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
@@ -643,143 +596,112 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
 @routes.post('/api/analytics/occurrences/max-crash-points/batch')
 async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Response:
     """
-    Get the total occurrences of crash points <= specified values.
+    Get occurrences for multiple maximum crash point values in a batch.
 
-    Request Body:
-        values (List[float]): List of maximum crash point values
-        games (int, optional): Number of recent games to analyze (default: 100)
-        hours (int, optional): Number of hours to analyze (default: 1)
-        by_time (bool, optional): Whether to analyze by time (default: false)
-        comparison (bool, optional): Whether to include comparison with previous period (default: true)
+    Request body:
+        {
+            "values": [float, ...],  # List of maximum crash point values
+            "games": int,            # Optional: Number of games to analyze (default: 100)
+            "hours": int,            # Optional: Number of hours to analyze
+            "by_time": bool          # Optional: Whether to analyze by time (default: false)
+        }
 
     Headers:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
     """
     try:
-        # Get request data
-        try:
-            data = await request.json()
-        except json.JSONDecodeError:
-            return error_response(
-                "Invalid JSON in request body.",
-                status=400
-            )
+        # Use our hash-based key builder for batch endpoints
+        key_builder = build_hash_based_key("occurrences:max:batch")
 
-        # Validate required fields
-        if 'values' not in data:
-            return error_response(
-                "Missing required field: 'values'.",
-                status=400
-            )
-
-        values = data['values']
-        if not isinstance(values, list) or not values:
-            return error_response(
-                "Field 'values' must be a non-empty list of float values.",
-                status=400
-            )
-
-        # Validate and convert values to floats
-        try:
-            values = [float(v) for v in values]
-        except (ValueError, TypeError):
-            return error_response(
-                "Field 'values' must contain numeric values.",
-                status=400
-            )
-
-        # Get optional parameters with defaults
-        by_time = data.get('by_time', False)
-        comparison = data.get('comparison', True)
-
-        # Check and validate parameters based on analysis type
-        if by_time:
-            hours = data.get('hours', 1)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
             try:
-                hours = int(hours)
-                if hours <= 0:
-                    return error_response(
-                        f"Invalid hours: {hours}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid hours: {hours}. Must be a positive integer.",
-                    status=400
-                )
-            games = None
-        else:
-            games = data.get('games', 100)
-            try:
-                games = int(games)
-                if games <= 0:
-                    return error_response(
-                        f"Invalid games: {games}. Must be a positive integer.",
-                        status=400
-                    )
-            except (ValueError, TypeError):
-                return error_response(
-                    f"Invalid games: {games}. Must be a positive integer.",
-                    status=400
-                )
-            hours = None
+                # Parse request body
+                body = await req.json()
 
-        # Get database and session
-        db = Database()
-        async with db as session:
-            # Get occurrence data
-            if by_time:
-                results = await db.run_sync(
-                    occurrences.get_max_crash_point_occurrences_by_time_batch,
-                    values, hours, comparison
-                )
-            else:
-                results = await db.run_sync(
-                    occurrences.get_max_crash_point_occurrences_by_games_batch,
-                    values, games, comparison
-                )
+                # Validate values
+                values = body.get('values', [])
+                if not values:
+                    return {"status": "error", "message": "No values provided"}, False
 
-            # Get timezone from request header
-            timezone_name = request.headers.get(TIMEZONE_HEADER)
+                try:
+                    # Convert all values to float
+                    values = [float(v) for v in values]
+                except ValueError:
+                    return {"status": "error", "message": "All values must be numeric"}, False
 
-            # Convert datetime values to the requested timezone
-            for value_data in results.values():
+                # Check if analysis should be by time
+                by_time = body.get('by_time', False)
+
+                # Get parameters with defaults
                 if by_time:
-                    value_data['start_time'] = convert_datetime_to_timezone(
-                        value_data['start_time'], timezone_name)
-                    value_data['end_time'] = convert_datetime_to_timezone(
-                        value_data['end_time'], timezone_name)
-
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['start_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['start_time'], timezone_name)
-                        value_data['comparison']['end_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['end_time'], timezone_name)
+                    hours = body.get('hours', 1)
+                    if not isinstance(hours, int) or hours <= 0:
+                        return {"status": "error", "message": "Hours must be a positive integer"}, False
                 else:
-                    value_data['first_game_time'] = convert_datetime_to_timezone(
-                        value_data['first_game_time'], timezone_name)
-                    value_data['last_game_time'] = convert_datetime_to_timezone(
-                        value_data['last_game_time'], timezone_name)
+                    games = body.get('games', 100)
+                    if not isinstance(games, int) or games <= 0:
+                        return {"status": "error", "message": "Games must be a positive integer"}, False
 
-                    if comparison and 'comparison' in value_data:
-                        value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['first_game_time'], timezone_name)
-                        value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
-                            value_data['comparison']['last_game_time'], timezone_name)
+                # Get timezone from header
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-            # Return the response
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'values': values,
-                    'by_time': by_time,
-                    'params': {'hours': hours} if by_time else {'games': games},
-                    'comparison': comparison,
-                    'occurrences': results
-                }
-            })
+                # Get database and session
+                db = Database()
+                async with db as session:
+                    # Get occurrences for each value
+                    results = {}
+
+                    for value in values:
+                        if by_time:
+                            data = await db.run_sync(
+                                occurrences.get_max_crash_point_occurrences_by_time,
+                                value, hours
+                            )
+                            # Convert datetime values
+                            data['start_time'] = convert_datetime_to_timezone(
+                                data['start_time'], timezone_name)
+                            data['end_time'] = convert_datetime_to_timezone(
+                                data['end_time'], timezone_name)
+                        else:
+                            data = await db.run_sync(
+                                occurrences.get_max_crash_point_occurrences_by_games,
+                                value, games
+                            )
+                            # Convert datetime values
+                            data['first_game_time'] = convert_datetime_to_timezone(
+                                data['first_game_time'], timezone_name)
+                            data['last_game_time'] = convert_datetime_to_timezone(
+                                data['last_game_time'], timezone_name)
+
+                        results[str(value)] = data
+
+                    # Return the response
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'by_time': by_time,
+                            'params': {'hours': hours} if by_time else {'games': games},
+                            'results': results
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except json.JSONDecodeError:
+                return {"status": "error", "message": "Invalid JSON in request body"}, False
+            except Exception as e:
+                logger.exception(
+                    f"Error in get_max_crash_point_occurrences_batch data_fetcher: {str(e)}")
+                return {"status": "error", "message": f"An error occurred: {str(e)}"}, False
+
+        # Use cached_endpoint utility with a longer TTL for batch requests
+        from ...utils.redis_cache import config
+        return await cached_endpoint(request, key_builder, data_fetcher, ttl=config.REDIS_CACHE_TTL_LONG)
 
     except Exception as e:
         logger.exception(
             f"Error in get_max_crash_point_occurrences_batch: {str(e)}")
         return error_response(f"An error occurred: {str(e)}")
+
+# Import at the end to avoid circular import issues
