@@ -7,10 +7,12 @@ recent games that match specific criteria.
 
 import logging
 import json
-from typing import Dict, Any
+import time
+from typing import Dict, Any, Tuple
 from aiohttp import web
 
 from ..utils import convert_datetime_to_timezone, json_response, error_response, TIMEZONE_HEADER
+from ...utils.redis_cache import cached_endpoint, build_key_from_match_info, build_key_with_query_param
 from ...db.engine import Database
 from .. import analytics
 
@@ -38,43 +40,60 @@ async def get_last_game_min_crash_point(request: web.Request) -> web.Response:
         - count of games since this game
     """
     try:
-        # Get value from path parameter and convert to float
-        try:
-            value = float(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be a number.", status=400)
+        # Define key builder function
+        key_builder = build_key_from_match_info("last_game:min", "value")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to float
+                try:
+                    value = float(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be a number."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the game
-        with db.get_session() as session:
-            result = analytics.get_last_game_min_crash_point(session, value)
+                # Get database from app
+                db: Database = req.app['db']
 
-            if result is None:
-                return error_response(f"No games found with crash point >= {value}", status=404)
+                # Query the game
+                with db.get_session() as session:
+                    result = analytics.get_last_game_min_crash_point(
+                        session, value)
 
-            game_data, games_since = result
+                    if result is None:
+                        return {"status": "error", "message": f"No games found with crash point >= {value}"}, False
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                game_data['endTime'] = convert_datetime_to_timezone(
-                    game_data['endTime'], timezone_name)
-                game_data['prepareTime'] = convert_datetime_to_timezone(
-                    game_data['prepareTime'], timezone_name)
-                game_data['beginTime'] = convert_datetime_to_timezone(
-                    game_data['beginTime'], timezone_name)
+                    game_data, games_since = result
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'game': game_data,
-                    'games_since': games_since
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        game_data['endTime'] = convert_datetime_to_timezone(
+                            game_data['endTime'], timezone_name)
+                        game_data['prepareTime'] = convert_datetime_to_timezone(
+                            game_data['prepareTime'], timezone_name)
+                        game_data['beginTime'] = convert_datetime_to_timezone(
+                            game_data['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'game': game_data,
+                            'games_since': games_since
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_game_min_crash_point data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_game_min_crash_point: {str(e)}")
@@ -98,43 +117,60 @@ async def get_last_game_exact_floor(request: web.Request) -> web.Response:
         - count of games since this game
     """
     try:
-        # Get value from path parameter and convert to int
-        try:
-            value = int(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be an integer.", status=400)
+        # Define key builder function
+        key_builder = build_key_from_match_info("last_game:floor", "value")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to int
+                try:
+                    value = int(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be an integer."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the game
-        with db.get_session() as session:
-            result = analytics.get_last_game_exact_floor(session, value)
+                # Get database from app
+                db: Database = req.app['db']
 
-            if result is None:
-                return error_response(f"No games found with floor value = {value}", status=404)
+                # Query the game
+                with db.get_session() as session:
+                    result = analytics.get_last_game_exact_floor(
+                        session, value)
 
-            game_data, games_since = result
+                    if result is None:
+                        return {"status": "error", "message": f"No games found with floor value = {value}"}, False
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                game_data['endTime'] = convert_datetime_to_timezone(
-                    game_data['endTime'], timezone_name)
-                game_data['prepareTime'] = convert_datetime_to_timezone(
-                    game_data['prepareTime'], timezone_name)
-                game_data['beginTime'] = convert_datetime_to_timezone(
-                    game_data['beginTime'], timezone_name)
+                    game_data, games_since = result
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'game': game_data,
-                    'games_since': games_since
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        game_data['endTime'] = convert_datetime_to_timezone(
+                            game_data['endTime'], timezone_name)
+                        game_data['prepareTime'] = convert_datetime_to_timezone(
+                            game_data['prepareTime'], timezone_name)
+                        game_data['beginTime'] = convert_datetime_to_timezone(
+                            game_data['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'game': game_data,
+                            'games_since': games_since
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_game_exact_floor data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_game_exact_floor: {str(e)}")
@@ -158,53 +194,70 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
         JSON response containing results for each value in the input list
     """
     try:
-        # Get request body
-        try:
-            body = await request.json()
-            values = body.get('values', [])
-            if not isinstance(values, list):
-                return error_response("Invalid request body. 'values' must be a list.", status=400)
-            if not values:
-                return error_response("No values provided.", status=400)
-            # Convert all values to float
-            values = [float(v) for v in values]
-        except (json.JSONDecodeError, ValueError):
-            return error_response("Invalid request body or values.", status=400)
+        # Use our new utility function for hash-based keys
+        from ...utils.redis_cache import build_hash_based_key
+        key_builder = build_hash_based_key("last_games:min:batch")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request body
+                try:
+                    body = await req.json()
+                    values = body.get('values', [])
+                    if not isinstance(values, list):
+                        return {"status": "error", "message": "Invalid request body. 'values' must be a list."}, False
+                    if not values:
+                        return {"status": "error", "message": "No values provided."}, False
+                    # Convert all values to float
+                    values = [float(v) for v in values]
+                except (json.JSONDecodeError, ValueError):
+                    return {"status": "error", "message": "Invalid request body or values."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            results = analytics.get_last_games_min_crash_points(
-                session, values)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Process results and convert timezones if needed
-            processed_results = {}
-            for value, result in results.items():
-                if result is not None:
-                    game_data, games_since = result
-                    if timezone_name:
-                        game_data['endTime'] = convert_datetime_to_timezone(
-                            game_data['endTime'], timezone_name)
-                        game_data['prepareTime'] = convert_datetime_to_timezone(
-                            game_data['prepareTime'], timezone_name)
-                        game_data['beginTime'] = convert_datetime_to_timezone(
-                            game_data['beginTime'], timezone_name)
-                    processed_results[str(value)] = {
-                        'game': game_data,
-                        'games_since': games_since
+                # Query the games
+                with db.get_session() as session:
+                    results = analytics.get_last_games_min_crash_points(
+                        session, values)
+
+                    # Process results and convert timezones if needed
+                    processed_results = {}
+                    for value, result in results.items():
+                        if result is not None:
+                            game_data, games_since = result
+                            if timezone_name:
+                                game_data['endTime'] = convert_datetime_to_timezone(
+                                    game_data['endTime'], timezone_name)
+                                game_data['prepareTime'] = convert_datetime_to_timezone(
+                                    game_data['prepareTime'], timezone_name)
+                                game_data['beginTime'] = convert_datetime_to_timezone(
+                                    game_data['beginTime'], timezone_name)
+                            processed_results[str(value)] = {
+                                'game': game_data,
+                                'games_since': games_since
+                            }
+                        else:
+                            processed_results[str(value)] = None
+
+                    response_data = {
+                        'status': 'success',
+                        'data': processed_results,
+                        'cached_at': int(time.time())
                     }
-                else:
-                    processed_results[str(value)] = None
+                    return response_data, True
 
-            return json_response({
-                'status': 'success',
-                'data': processed_results
-            })
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_games_min_crash_points data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_min_crash_points: {str(e)}")
@@ -228,52 +281,70 @@ async def get_last_games_exact_floors(request: web.Request) -> web.Response:
         JSON response containing results for each value in the input list
     """
     try:
-        # Get request body
-        try:
-            body = await request.json()
-            values = body.get('values', [])
-            if not isinstance(values, list):
-                return error_response("Invalid request body. 'values' must be a list.", status=400)
-            if not values:
-                return error_response("No values provided.", status=400)
-            # Convert all values to int
-            values = [int(v) for v in values]
-        except (json.JSONDecodeError, ValueError):
-            return error_response("Invalid request body or values.", status=400)
+        # Use our new utility function for hash-based keys
+        from ...utils.redis_cache import build_hash_based_key
+        key_builder = build_hash_based_key("last_games:floor:batch")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request body
+                try:
+                    body = await req.json()
+                    values = body.get('values', [])
+                    if not isinstance(values, list):
+                        return {"status": "error", "message": "Invalid request body. 'values' must be a list."}, False
+                    if not values:
+                        return {"status": "error", "message": "No values provided."}, False
+                    # Convert all values to int
+                    values = [int(v) for v in values]
+                except (json.JSONDecodeError, ValueError):
+                    return {"status": "error", "message": "Invalid request body or values."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            results = analytics.get_last_games_exact_floors(session, values)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Process results and convert timezones if needed
-            processed_results = {}
-            for value, result in results.items():
-                if result is not None:
-                    game_data, games_since = result
-                    if timezone_name:
-                        game_data['endTime'] = convert_datetime_to_timezone(
-                            game_data['endTime'], timezone_name)
-                        game_data['prepareTime'] = convert_datetime_to_timezone(
-                            game_data['prepareTime'], timezone_name)
-                        game_data['beginTime'] = convert_datetime_to_timezone(
-                            game_data['beginTime'], timezone_name)
-                    processed_results[str(value)] = {
-                        'game': game_data,
-                        'games_since': games_since
+                # Query the games
+                with db.get_session() as session:
+                    results = analytics.get_last_games_exact_floors(
+                        session, values)
+
+                    # Process results and convert timezones if needed
+                    processed_results = {}
+                    for value, result in results.items():
+                        if result is not None:
+                            game_data, games_since = result
+                            if timezone_name:
+                                game_data['endTime'] = convert_datetime_to_timezone(
+                                    game_data['endTime'], timezone_name)
+                                game_data['prepareTime'] = convert_datetime_to_timezone(
+                                    game_data['prepareTime'], timezone_name)
+                                game_data['beginTime'] = convert_datetime_to_timezone(
+                                    game_data['beginTime'], timezone_name)
+                            processed_results[str(value)] = {
+                                'game': game_data,
+                                'games_since': games_since
+                            }
+                        else:
+                            processed_results[str(value)] = None
+
+                    response_data = {
+                        'status': 'success',
+                        'data': processed_results,
+                        'cached_at': int(time.time())
                     }
-                else:
-                    processed_results[str(value)] = None
+                    return response_data, True
 
-            return json_response({
-                'status': 'success',
-                'data': processed_results
-            })
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_games_exact_floors data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_exact_floors: {str(e)}")
@@ -297,43 +368,60 @@ async def get_last_game_max_crash_point(request: web.Request) -> web.Response:
         - count of games since this game
     """
     try:
-        # Get value from path parameter and convert to float
-        try:
-            value = float(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be a number.", status=400)
+        # Define key builder function
+        key_builder = build_key_from_match_info("last_game:max", "value")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to float
+                try:
+                    value = float(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be a number."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the game
-        with db.get_session() as session:
-            result = analytics.get_last_game_max_crash_point(session, value)
+                # Get database from app
+                db: Database = req.app['db']
 
-            if result is None:
-                return error_response(f"No games found with crash point <= {value}", status=404)
+                # Query the game
+                with db.get_session() as session:
+                    result = analytics.get_last_game_max_crash_point(
+                        session, value)
 
-            game_data, games_since = result
+                    if result is None:
+                        return {"status": "error", "message": f"No games found with crash point <= {value}"}, False
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                game_data['endTime'] = convert_datetime_to_timezone(
-                    game_data['endTime'], timezone_name)
-                game_data['prepareTime'] = convert_datetime_to_timezone(
-                    game_data['prepareTime'], timezone_name)
-                game_data['beginTime'] = convert_datetime_to_timezone(
-                    game_data['beginTime'], timezone_name)
+                    game_data, games_since = result
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'game': game_data,
-                    'games_since': games_since
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        game_data['endTime'] = convert_datetime_to_timezone(
+                            game_data['endTime'], timezone_name)
+                        game_data['prepareTime'] = convert_datetime_to_timezone(
+                            game_data['prepareTime'], timezone_name)
+                        game_data['beginTime'] = convert_datetime_to_timezone(
+                            game_data['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'game': game_data,
+                            'games_since': games_since
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_game_max_crash_point data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_game_max_crash_point: {str(e)}")
@@ -357,53 +445,70 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
         JSON response containing results for each value in the input list
     """
     try:
-        # Get request body
-        try:
-            body = await request.json()
-            values = body.get('values', [])
-            if not isinstance(values, list):
-                return error_response("Invalid request body. 'values' must be a list.", status=400)
-            if not values:
-                return error_response("No values provided.", status=400)
-            # Convert all values to float
-            values = [float(v) for v in values]
-        except (json.JSONDecodeError, ValueError):
-            return error_response("Invalid request body or values.", status=400)
+        # Use our new utility function for hash-based keys
+        from ...utils.redis_cache import build_hash_based_key
+        key_builder = build_hash_based_key("last_games:max:batch")
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get request body
+                try:
+                    body = await req.json()
+                    values = body.get('values', [])
+                    if not isinstance(values, list):
+                        return {"status": "error", "message": "Invalid request body. 'values' must be a list."}, False
+                    if not values:
+                        return {"status": "error", "message": "No values provided."}, False
+                    # Convert all values to float
+                    values = [float(v) for v in values]
+                except (json.JSONDecodeError, ValueError):
+                    return {"status": "error", "message": "Invalid request body or values."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            results = analytics.get_last_games_max_crash_points(
-                session, values)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Process results and convert timezones if needed
-            processed_results = {}
-            for value, result in results.items():
-                if result is not None:
-                    game_data, games_since = result
-                    if timezone_name:
-                        game_data['endTime'] = convert_datetime_to_timezone(
-                            game_data['endTime'], timezone_name)
-                        game_data['prepareTime'] = convert_datetime_to_timezone(
-                            game_data['prepareTime'], timezone_name)
-                        game_data['beginTime'] = convert_datetime_to_timezone(
-                            game_data['beginTime'], timezone_name)
-                    processed_results[str(value)] = {
-                        'game': game_data,
-                        'games_since': games_since
+                # Query the games
+                with db.get_session() as session:
+                    results = analytics.get_last_games_max_crash_points(
+                        session, values)
+
+                    # Process results and convert timezones if needed
+                    processed_results = {}
+                    for value, result in results.items():
+                        if result is not None:
+                            game_data, games_since = result
+                            if timezone_name:
+                                game_data['endTime'] = convert_datetime_to_timezone(
+                                    game_data['endTime'], timezone_name)
+                                game_data['prepareTime'] = convert_datetime_to_timezone(
+                                    game_data['prepareTime'], timezone_name)
+                                game_data['beginTime'] = convert_datetime_to_timezone(
+                                    game_data['beginTime'], timezone_name)
+                            processed_results[str(value)] = {
+                                'game': game_data,
+                                'games_since': games_since
+                            }
+                        else:
+                            processed_results[str(value)] = None
+
+                    response_data = {
+                        'status': 'success',
+                        'data': processed_results,
+                        'cached_at': int(time.time())
                     }
-                else:
-                    processed_results[str(value)] = None
+                    return response_data, True
 
-            return json_response({
-                'status': 'success',
-                'data': processed_results
-            })
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_games_max_crash_points data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_games_max_crash_points: {str(e)}")
@@ -428,50 +533,67 @@ async def get_last_min_crash_point_games_handler(request: web.Request) -> web.Re
         JSON response containing a list of games matching the criteria
     """
     try:
-        # Get value from path parameter and convert to float
-        try:
-            value = float(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be a number.", status=400)
+        # Define key builder function
+        key_builder = build_key_with_query_param(
+            "last_games:min", "value", "limit")
 
-        # Get limit from query parameters
-        try:
-            limit = int(request.query.get('limit', '10'))
-            if limit <= 0:
-                return error_response("Limit must be a positive integer.", status=400)
-        except ValueError:
-            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to float
+                try:
+                    value = float(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be a number."}, False
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get limit from query parameters
+                try:
+                    limit = int(req.query.get('limit', '10'))
+                    if limit <= 0:
+                        return {"status": "error", "message": "Limit must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": "Invalid limit parameter. Must be an integer."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            games = analytics.get_last_min_crash_point_games(
-                session, value, limit)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                for game in games:
-                    game['endTime'] = convert_datetime_to_timezone(
-                        game['endTime'], timezone_name)
-                    game['prepareTime'] = convert_datetime_to_timezone(
-                        game['prepareTime'], timezone_name)
-                    game['beginTime'] = convert_datetime_to_timezone(
-                        game['beginTime'], timezone_name)
+                # Query the games
+                with db.get_session() as session:
+                    games = analytics.get_last_min_crash_point_games(
+                        session, value, limit)
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'min_value': value,
-                    'limit': limit,
-                    'count': len(games),
-                    'games': games
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        for game in games:
+                            game['endTime'] = convert_datetime_to_timezone(
+                                game['endTime'], timezone_name)
+                            game['prepareTime'] = convert_datetime_to_timezone(
+                                game['prepareTime'], timezone_name)
+                            game['beginTime'] = convert_datetime_to_timezone(
+                                game['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'min_value': value,
+                            'limit': limit,
+                            'count': len(games),
+                            'games': games
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_min_crash_point_games_handler data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(
@@ -497,50 +619,67 @@ async def get_last_max_crash_point_games_handler(request: web.Request) -> web.Re
         JSON response containing a list of games matching the criteria
     """
     try:
-        # Get value from path parameter and convert to float
-        try:
-            value = float(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be a number.", status=400)
+        # Define key builder function
+        key_builder = build_key_with_query_param(
+            "last_games:max", "value", "limit")
 
-        # Get limit from query parameters
-        try:
-            limit = int(request.query.get('limit', '10'))
-            if limit <= 0:
-                return error_response("Limit must be a positive integer.", status=400)
-        except ValueError:
-            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to float
+                try:
+                    value = float(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be a number."}, False
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get limit from query parameters
+                try:
+                    limit = int(req.query.get('limit', '10'))
+                    if limit <= 0:
+                        return {"status": "error", "message": "Limit must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": "Invalid limit parameter. Must be an integer."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            games = analytics.get_last_max_crash_point_games(
-                session, value, limit)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                for game in games:
-                    game['endTime'] = convert_datetime_to_timezone(
-                        game['endTime'], timezone_name)
-                    game['prepareTime'] = convert_datetime_to_timezone(
-                        game['prepareTime'], timezone_name)
-                    game['beginTime'] = convert_datetime_to_timezone(
-                        game['beginTime'], timezone_name)
+                # Query the games
+                with db.get_session() as session:
+                    games = analytics.get_last_max_crash_point_games(
+                        session, value, limit)
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'max_value': value,
-                    'limit': limit,
-                    'count': len(games),
-                    'games': games
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        for game in games:
+                            game['endTime'] = convert_datetime_to_timezone(
+                                game['endTime'], timezone_name)
+                            game['prepareTime'] = convert_datetime_to_timezone(
+                                game['prepareTime'], timezone_name)
+                            game['beginTime'] = convert_datetime_to_timezone(
+                                game['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'max_value': value,
+                            'limit': limit,
+                            'count': len(games),
+                            'games': games
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_max_crash_point_games_handler data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(
@@ -566,49 +705,67 @@ async def get_last_exact_floor_games_handler(request: web.Request) -> web.Respon
         JSON response containing a list of games matching the criteria
     """
     try:
-        # Get value from path parameter and convert to int
-        try:
-            value = int(request.match_info['value'])
-        except ValueError:
-            return error_response("Invalid value parameter. Must be an integer.", status=400)
+        # Define key builder function
+        key_builder = build_key_with_query_param(
+            "last_games:floor", "value", "limit")
 
-        # Get limit from query parameters
-        try:
-            limit = int(request.query.get('limit', '10'))
-            if limit <= 0:
-                return error_response("Limit must be a positive integer.", status=400)
-        except ValueError:
-            return error_response("Invalid limit parameter. Must be an integer.", status=400)
+        # Define data fetcher function
+        async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
+            try:
+                # Get value from path parameter and convert to int
+                try:
+                    value = int(req.match_info['value'])
+                except ValueError:
+                    return {"status": "error", "message": "Invalid value parameter. Must be an integer."}, False
 
-        # Get timezone from header (if provided)
-        timezone_name = request.headers.get(TIMEZONE_HEADER)
+                # Get limit from query parameters
+                try:
+                    limit = int(req.query.get('limit', '10'))
+                    if limit <= 0:
+                        return {"status": "error", "message": "Limit must be a positive integer."}, False
+                except ValueError:
+                    return {"status": "error", "message": "Invalid limit parameter. Must be an integer."}, False
 
-        # Get database from app
-        db: Database = request.app['db']
+                # Get timezone from header (if provided)
+                timezone_name = req.headers.get(TIMEZONE_HEADER)
 
-        # Query the games
-        with db.get_session() as session:
-            games = analytics.get_last_exact_floor_games(session, value, limit)
+                # Get database from app
+                db: Database = req.app['db']
 
-            # Convert datetime values to specified timezone if provided
-            if timezone_name:
-                for game in games:
-                    game['endTime'] = convert_datetime_to_timezone(
-                        game['endTime'], timezone_name)
-                    game['prepareTime'] = convert_datetime_to_timezone(
-                        game['prepareTime'], timezone_name)
-                    game['beginTime'] = convert_datetime_to_timezone(
-                        game['beginTime'], timezone_name)
+                # Query the games
+                with db.get_session() as session:
+                    games = analytics.get_last_exact_floor_games(
+                        session, value, limit)
 
-            return json_response({
-                'status': 'success',
-                'data': {
-                    'floor_value': value,
-                    'limit': limit,
-                    'count': len(games),
-                    'games': games
-                }
-            })
+                    # Convert datetime values to specified timezone if provided
+                    if timezone_name:
+                        for game in games:
+                            game['endTime'] = convert_datetime_to_timezone(
+                                game['endTime'], timezone_name)
+                            game['prepareTime'] = convert_datetime_to_timezone(
+                                game['prepareTime'], timezone_name)
+                            game['beginTime'] = convert_datetime_to_timezone(
+                                game['beginTime'], timezone_name)
+
+                    response_data = {
+                        'status': 'success',
+                        'data': {
+                            'floor_value': value,
+                            'limit': limit,
+                            'count': len(games),
+                            'games': games
+                        },
+                        'cached_at': int(time.time())
+                    }
+                    return response_data, True
+
+            except Exception as e:
+                logger.error(
+                    f"Error in get_last_exact_floor_games_handler data_fetcher: {str(e)}")
+                return {"status": "error", "message": "Internal server error"}, False
+
+        # Use cached_endpoint utility
+        return await cached_endpoint(request, key_builder, data_fetcher)
 
     except Exception as e:
         logger.error(f"Error in get_last_exact_floor_games_handler: {str(e)}")

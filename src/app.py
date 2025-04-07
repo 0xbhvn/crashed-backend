@@ -311,6 +311,16 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         # Always update the last processed ID after processing a successful game
         monitor.last_processed_game_id = game_id
 
+        # Invalidate Redis cache for the new game
+        try:
+            if config.REDIS_ENABLED:
+                from .utils.redis_keys import invalidate_analytics_cache_for_new_game
+                invalidate_analytics_cache_for_new_game()
+                logger.info(
+                    f"Redis analytics cache invalidated for new game {game_id}")
+        except Exception as e:
+            logger.error(f"Error invalidating Redis cache for new game: {e}")
+
         try:
             # Broadcast the new game to WebSocket clients if we have a WebSocket manager
             if 'websocket_manager' in api_app:
