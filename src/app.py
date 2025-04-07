@@ -21,6 +21,7 @@ from .history import BCCrashMonitor
 from .utils import load_env, configure_logging, fetch_game_history, fetch_games_batch
 from .db import get_database, CrashGame, create_migration, upgrade_database, downgrade_database, show_migrations
 from .utils.env import get_env_var
+from .utils.redis import setup_redis, is_redis_available, close_redis_connections
 
 
 def parse_arguments():
@@ -149,9 +150,31 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
             logger.error(f"Failed to connect to database: {e}")
             logger.warning("Continuing without database support")
 
+    # Initialize Redis if enabled
+    if config.REDIS_ENABLED:
+        try:
+            setup_redis()
+            if is_redis_available():
+                logger.info("Redis connection established")
+                # Store Redis availability in app context for API routes
+                api_app = web.Application()
+                api_app['redis_available'] = True
+            else:
+                logger.warning("Redis is enabled but not available")
+                api_app = web.Application()
+                api_app['redis_available'] = False
+        except Exception as e:
+            logger.error(f"Failed to connect to Redis: {e}")
+            logger.warning("Continuing without Redis support")
+            api_app = web.Application()
+            api_app['redis_available'] = False
+    else:
+        logger.info("Redis is disabled")
+        api_app = web.Application()
+        api_app['redis_available'] = False
+
     # Set up API server
     from .api import setup_api
-    api_app = web.Application()
 
     # Store database in app
     if db:
@@ -614,52 +637,67 @@ async def start_health_check_server():
 
 
 async def main() -> None:
-    """Main entry point for the application"""
-    # Start health check server for Railway
-    asyncio.create_task(start_health_check_server())
-
+    """
+    Main application entry point
+    """
     # Parse command line arguments
     args = parse_arguments()
 
-    # Load environment variables
+    # Load environment variables if .env file exists
     load_env()
 
-    # Reload configuration from environment variables
-    from src.config import reload_config
-    reload_config()
+    # Reload config after loading env vars
+    config.reload_config()
 
     # Configure logging
-    logger = configure_logging("app", config.LOG_LEVEL)
+    configure_logging("app", config.LOG_LEVEL)
 
-    # Log configuration
+    # Log initial configuration
     config.log_config()
 
-    # Run the appropriate command
-    if args.command == "catchup":
-        await run_catchup(
-            pages=args.pages,
-            batch_size=args.batch_size,
-            game_id=args.game_id if hasattr(args, 'game_id') else None,
-            start_game_id=args.start_game_id if hasattr(
-                args, 'start_game_id') else None,
-            end_game_id=args.end_game_id if hasattr(
-                args, 'end_game_id') else None,
-            game_ids=args.game_ids if hasattr(args, 'game_ids') else None
-        )
-    elif args.command == "migrate":
-        if not args.migrate_command:
-            logger.error("No migration command specified")
-            sys.exit(1)
-        await run_migrations(
-            args.migrate_command,
-            message=getattr(args, "message", None),
-            revision=getattr(args, "revision", None)
-        )
-    else:
-        # Default to monitor command
-        skip_catchup = getattr(args, "skip_catchup", False)
-        skip_polling = getattr(args, "skip_polling", False)
-        await run_monitor(skip_catchup=skip_catchup, skip_polling=skip_polling)
+    # Get the logger after it's been configured
+    logger = logging.getLogger("app")
+
+    try:
+        # Health check server for container readiness
+        health_check_task = asyncio.create_task(start_health_check_server())
+
+        if args.command == "monitor":
+            await run_monitor(
+                skip_catchup=args.skip_catchup if hasattr(
+                    args, 'skip_catchup') else False,
+                skip_polling=args.skip_polling if hasattr(
+                    args, 'skip_polling') else False
+            )
+        elif args.command == "catchup":
+            await run_catchup(
+                pages=args.pages,
+                batch_size=args.batch_size,
+                game_id=args.game_id,
+                start_game_id=args.start_game_id,
+                end_game_id=args.end_game_id,
+                game_ids=args.game_ids
+            )
+        elif args.command == "migrate":
+            await run_migrations(
+                args.migrate_command,
+                **{k: v for k, v in vars(args).items() if k not in ['command', 'migrate_command']}
+            )
+        else:
+            logger.error(f"Unknown command: {args.command}")
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    except Exception as e:
+        logger.exception(f"Error: {e}")
+    finally:
+        # Clean up resources
+        if config.REDIS_ENABLED:
+            close_redis_connections()
+
+        # Force garbage collection
+        gc.collect()
+
+        logger.info("Crash Monitor terminated")
 
 
 def main_cli() -> None:

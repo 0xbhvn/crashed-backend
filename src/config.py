@@ -58,6 +58,16 @@ DATABASE_ENABLED = get_env_var('DATABASE_ENABLED', 'true').lower() == 'true'
 DATABASE_URL = get_env_var(
     'DATABASE_URL', 'postgresql://postgres@localhost:5432/bc_crash_db')
 
+# Redis settings
+REDIS_ENABLED = get_env_var('REDIS_ENABLED', 'true').lower() == 'true'
+REDIS_URL = get_env_var('REDIS_URL', 'redis://localhost:6379')
+REDIS_MAX_CONNECTIONS = int(get_env_var('REDIS_MAX_CONNECTIONS', '10'))
+REDIS_SOCKET_TIMEOUT = int(get_env_var('REDIS_SOCKET_TIMEOUT', '5'))
+# 30 seconds for games endpoints
+REDIS_CACHE_TTL_SHORT = int(get_env_var('REDIS_CACHE_TTL_SHORT', '30'))
+# 120 seconds for analytics endpoints
+REDIS_CACHE_TTL_LONG = int(get_env_var('REDIS_CACHE_TTL_LONG', '120'))
+
 # Catchup settings
 CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
 CATCHUP_PAGES = int(get_env_var('CATCHUP_PAGES', '20'))
@@ -97,7 +107,7 @@ def log_config():
     masked_config = config_dict.copy()
 
     # Mask sensitive values
-    for key in ['DATABASE_URL', 'BC_GAME_SALT']:
+    for key in ['DATABASE_URL', 'BC_GAME_SALT', 'REDIS_URL']:
         if key in masked_config and masked_config[key]:
             # Mask all but first and last few characters
             value = str(masked_config[key])
@@ -121,6 +131,7 @@ def reload_config():
     global POLL_INTERVAL, RETRY_INTERVAL, MAX_HISTORY_SIZE
     global LOG_LEVEL
     global DATABASE_ENABLED, DATABASE_URL
+    global REDIS_ENABLED, REDIS_URL, REDIS_MAX_CONNECTIONS, REDIS_SOCKET_TIMEOUT, REDIS_CACHE_TTL_SHORT, REDIS_CACHE_TTL_LONG
     global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE
     global TIMEZONE
     global APP_NAME, APP_VERSION
@@ -161,6 +172,14 @@ def reload_config():
         'DATABASE_ENABLED', 'true').lower() == 'true'
     DATABASE_URL = get_env_var(
         'DATABASE_URL', 'postgresql://postgres@localhost:5432/bc_crash_db')
+
+    # Redis settings
+    REDIS_ENABLED = get_env_var('REDIS_ENABLED', 'true').lower() == 'true'
+    REDIS_URL = get_env_var('REDIS_URL', 'redis://localhost:6379')
+    REDIS_MAX_CONNECTIONS = int(get_env_var('REDIS_MAX_CONNECTIONS', '10'))
+    REDIS_SOCKET_TIMEOUT = int(get_env_var('REDIS_SOCKET_TIMEOUT', '5'))
+    REDIS_CACHE_TTL_SHORT = int(get_env_var('REDIS_CACHE_TTL_SHORT', '30'))
+    REDIS_CACHE_TTL_LONG = int(get_env_var('REDIS_CACHE_TTL_LONG', '120'))
 
     # Catchup settings
     CATCHUP_ENABLED = get_env_var('CATCHUP_ENABLED', 'true').lower() == 'true'
