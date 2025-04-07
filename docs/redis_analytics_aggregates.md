@@ -83,6 +83,7 @@ Our Redis caching implementation uses a tiered TTL (Time-To-Live) strategy:
 - **Short-lived analytics (REDIS_CACHE_TTL_SHORT = 30s)**: For simple, frequently accessed endpoints that return recent data
   - Single-value GET endpoints with small datasets (e.g., `/api/analytics/occurrences/min-crash-point/{value}`)
   - Endpoints where data freshness is more important than computational savings
+  - Basic data retrieval endpoints (e.g., `/api/games`)
 
 - **Longer-lived analytics (REDIS_CACHE_TTL_LONG = 120s)**: For computationally expensive operations
   - All intervals endpoints (both single-value and batch)
@@ -116,6 +117,11 @@ We've created several utility functions to support Redis caching:
 ### 3.2. Currently Cached Endpoints
 
 We've implemented Redis caching for the following endpoint groups:
+
+#### Basic Game Data Endpoints
+
+- `/api/games` (Paginated game list)
+- `/api/games/{game_id}` (Single game by ID)
 
 #### Last Games Endpoints
 
@@ -216,6 +222,7 @@ If clients are receiving outdated data:
 
 As part of the feat/redis-caching branch, we have successfully implemented Redis caching for:
 
+- ✅ Basic Game Data endpoints (get games list, get single game)
 - ✅ Last Games endpoints (min/max crash points, exact floors)
 - ✅ Occurrences endpoints (min/max crash points, exact floors)
 - ✅ Series endpoints (without-min-crash-point)
