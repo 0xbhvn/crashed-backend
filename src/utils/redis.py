@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 from urllib.parse import urlparse
 import time
 import asyncio
+import hashlib
+import os.path
 
 import redis
 from redis import Redis
@@ -27,6 +29,9 @@ logger = logging.getLogger(__name__)
 _redis_pool = None
 _pubsub_clients: Dict[str, PubSub] = {}
 
+# Global cache version
+_cache_version = "v1"
+
 
 def setup_redis() -> None:
     """
@@ -36,6 +41,7 @@ def setup_redis() -> None:
     - Appropriate connection limits
     - Socket timeout settings
     - Memory optimization settings
+    - Persistence configuration (RDB/AOF)
 
     It should be called once at application startup.
     """
@@ -78,9 +84,54 @@ def setup_redis() -> None:
                 client.config_set("maxmemory-policy", "volatile-lru")
                 logger.info("Set Redis maxmemory policy to volatile-lru")
 
+            # Configure persistence settings
+            configure_persistence(client)
+
     except (RedisError, ConnectionError, TimeoutError) as e:
         logger.error(f"Failed to initialize Redis: {str(e)}")
         _redis_pool = None
+
+
+def configure_persistence(client: Redis) -> None:
+    """
+    Configure Redis persistence (RDB/AOF) based on data importance.
+
+    Args:
+        client: Redis client instance
+    """
+    try:
+        # Get current persistence configuration
+        config_get = client.config_get('*')
+        logger.debug(f"Current Redis persistence configuration retrieved")
+
+        # Configure RDB (Redis Database) persistence
+        # RDB performs point-in-time snapshots of your dataset at specified intervals
+        # Format: save <seconds> <changes>
+        # These settings will create snapshots:
+        # - After 900 sec (15 min) if at least 1 key changed
+        # - After 300 sec (5 min) if at least 10 keys changed
+        # - After 60 sec if at least 10000 keys changed
+        client.config_set('save', '900 1 300 10 60 10000')
+
+        # Configure AOF (Append Only File) persistence
+        # AOF logs every write operation received by the server
+        # This can be used to reconstruct the original dataset by replaying operations
+        # - appendonly: whether AOF is enabled (yes/no)
+        # - appendfsync: sync strategy (always/everysec/no)
+        #   'always': fsync after every write (most durable, slowest)
+        #   'everysec': fsync once per second (good compromise)
+        #   'no': let OS decide when to sync (fastest, least durable)
+
+        # For crash data, we'll use AOF with everysec sync strategy
+        # This provides good durability without significant performance impact
+        client.config_set('appendonly', 'yes')
+        client.config_set('appendfsync', 'everysec')
+
+        logger.info(
+            "Redis persistence configured: RDB snapshots and AOF enabled")
+    except RedisError as e:
+        logger.warning(f"Failed to configure Redis persistence: {str(e)}")
+        logger.warning("Redis will use default persistence settings")
 
 
 def get_redis_client() -> Redis:
@@ -147,3 +198,108 @@ def close_redis_connections() -> None:
             logger.warning(f"Error disconnecting Redis pool: {str(e)}")
 
         _redis_pool = None
+
+
+# Key generation functions for standardized Redis key naming
+def get_cache_version() -> str:
+    """
+    Get the current cache version.
+
+    This version is used in all cache keys to allow for versioning and cache invalidation.
+
+    Returns:
+        str: Current cache version
+    """
+    global _cache_version
+    return _cache_version
+
+
+def set_cache_version(new_version: Optional[str] = None) -> str:
+    """
+    Set a new cache version to invalidate all existing keys.
+
+    Args:
+        new_version: Optional specific version to set. If None, generates a timestamp-based version.
+
+    Returns:
+        str: The new cache version
+    """
+    global _cache_version
+
+    if new_version is None:
+        # Generate a timestamp-based version
+        _cache_version = f"v{int(time.time())}"
+    else:
+        _cache_version = new_version
+
+    logger.info(f"Cache version updated to {_cache_version}")
+    return _cache_version
+
+
+def generate_games_key(page: int, per_page: int, timezone: str) -> str:
+    """
+    Generate a standardized Redis key for games list endpoints.
+
+    Args:
+        page: Page number
+        per_page: Number of items per page
+        timezone: Timezone for game timestamps
+
+    Returns:
+        str: Standardized Redis key
+    """
+    return f"games:list:page:{page}:per_page:{per_page}:tz:{timezone}:{get_cache_version()}"
+
+
+def generate_game_detail_key(game_id: str) -> str:
+    """
+    Generate a standardized Redis key for a game detail endpoint.
+
+    Args:
+        game_id: Unique identifier for the game
+
+    Returns:
+        str: Standardized Redis key
+    """
+    return f"games:detail:{game_id}:{get_cache_version()}"
+
+
+def generate_analytics_key(endpoint: str, params: Dict[str, Any]) -> str:
+    """
+    Generate a standardized Redis key for analytics endpoints.
+
+    Args:
+        endpoint: Analytics endpoint name (e.g., 'interval', 'occurrence')
+        params: Dictionary of query parameters
+
+    Returns:
+        str: Standardized Redis key
+    """
+    # Sort parameters for consistent key generation
+    sorted_params = sorted(params.items())
+
+    # Build parameter part of the key
+    param_parts = [f"{k}:{v}" for k, v in sorted_params]
+    param_string = ":".join(param_parts)
+
+    return f"analytics:{endpoint}:{param_string}:{get_cache_version()}"
+
+
+def generate_hash_key(data: Any) -> str:
+    """
+    Generate a hash key for complex data structures.
+
+    This is useful when the parameter space is too large for string-based keys.
+
+    Args:
+        data: Any JSON-serializable data structure
+
+    Returns:
+        str: Hashed key
+    """
+    # Convert data to a stable string representation
+    data_str = json.dumps(data, sort_keys=True)
+
+    # Hash the string
+    hash_obj = hashlib.md5(data_str.encode())
+    return hash_obj.hexdigest()
