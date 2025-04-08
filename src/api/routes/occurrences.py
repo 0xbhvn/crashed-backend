@@ -380,6 +380,7 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
             "games": int,            # Optional: Number of games to analyze (default: 100)
             "hours": int,            # Optional: Number of hours to analyze
             "by_time": bool          # Optional: Whether to analyze by time (default: false)
+            "comparison": bool       # Optional: Whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -408,6 +409,8 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
 
                 # Check if analysis should be by time
                 by_time = body.get('by_time', False)
+                # Get comparison parameter
+                comparison = body.get('comparison', True)
 
                 # Get parameters with defaults
                 if by_time:
@@ -425,32 +428,42 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
                 # Get database and session
                 db = Database()
                 async with db as session:
-                    # Get occurrences for each value
-                    results = {}
+                    # Get occurrences for each value with comparison data
+                    if by_time:
+                        results = await db.run_sync(
+                            occurrences.get_min_crash_point_occurrences_by_time_batch,
+                            values, hours, comparison
+                        )
+                    else:
+                        results = await db.run_sync(
+                            occurrences.get_min_crash_point_occurrences_by_games_batch,
+                            values, games, comparison
+                        )
 
-                    for value in values:
+                    # Convert datetime values to the requested timezone
+                    for value_data in results.values():
                         if by_time:
-                            data = await db.run_sync(
-                                occurrences.get_min_crash_point_occurrences_by_time,
-                                value, hours
-                            )
-                            # Convert datetime values
-                            data['start_time'] = convert_datetime_to_timezone(
-                                data['start_time'], timezone_name)
-                            data['end_time'] = convert_datetime_to_timezone(
-                                data['end_time'], timezone_name)
-                        else:
-                            data = await db.run_sync(
-                                occurrences.get_min_crash_point_occurrences_by_games,
-                                value, games
-                            )
-                            # Convert datetime values
-                            data['first_game_time'] = convert_datetime_to_timezone(
-                                data['first_game_time'], timezone_name)
-                            data['last_game_time'] = convert_datetime_to_timezone(
-                                data['last_game_time'], timezone_name)
+                            value_data['start_time'] = convert_datetime_to_timezone(
+                                value_data['start_time'], timezone_name)
+                            value_data['end_time'] = convert_datetime_to_timezone(
+                                value_data['end_time'], timezone_name)
 
-                        results[str(value)] = data
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['start_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['start_time'], timezone_name)
+                                value_data['comparison']['end_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['end_time'], timezone_name)
+                        else:
+                            value_data['first_game_time'] = convert_datetime_to_timezone(
+                                value_data['first_game_time'], timezone_name)
+                            value_data['last_game_time'] = convert_datetime_to_timezone(
+                                value_data['last_game_time'], timezone_name)
+
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['first_game_time'], timezone_name)
+                                value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['last_game_time'], timezone_name)
 
                     # Return the response
                     response_data = {
@@ -458,6 +471,7 @@ async def get_min_crash_point_occurrences_batch(request: web.Request) -> web.Res
                         'data': {
                             'by_time': by_time,
                             'params': {'hours': hours} if by_time else {'games': games},
+                            'comparison': comparison,
                             'results': results
                         },
                         'cached_at': int(time.time())
@@ -492,6 +506,7 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
             "games": int,            # Optional: Number of games to analyze (default: 100)
             "hours": int,            # Optional: Number of hours to analyze
             "by_time": bool          # Optional: Whether to analyze by time (default: false)
+            "comparison": bool       # Optional: Whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -520,6 +535,8 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
 
                 # Check if analysis should be by time
                 by_time = body.get('by_time', False)
+                # Get comparison parameter
+                comparison = body.get('comparison', True)
 
                 # Get parameters with defaults
                 if by_time:
@@ -537,32 +554,42 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
                 # Get database and session
                 db = Database()
                 async with db as session:
-                    # Get occurrences for each value
-                    results = {}
+                    # Get occurrences for each value with comparison data
+                    if by_time:
+                        results = await db.run_sync(
+                            occurrences.get_exact_floor_occurrences_by_time_batch,
+                            values, hours, comparison
+                        )
+                    else:
+                        results = await db.run_sync(
+                            occurrences.get_exact_floor_occurrences_by_games_batch,
+                            values, games, comparison
+                        )
 
-                    for value in values:
+                    # Convert datetime values to the requested timezone
+                    for value_data in results.values():
                         if by_time:
-                            data = await db.run_sync(
-                                occurrences.get_exact_floor_occurrences_by_time,
-                                value, hours
-                            )
-                            # Convert datetime values
-                            data['start_time'] = convert_datetime_to_timezone(
-                                data['start_time'], timezone_name)
-                            data['end_time'] = convert_datetime_to_timezone(
-                                data['end_time'], timezone_name)
-                        else:
-                            data = await db.run_sync(
-                                occurrences.get_exact_floor_occurrences_by_games,
-                                value, games
-                            )
-                            # Convert datetime values
-                            data['first_game_time'] = convert_datetime_to_timezone(
-                                data['first_game_time'], timezone_name)
-                            data['last_game_time'] = convert_datetime_to_timezone(
-                                data['last_game_time'], timezone_name)
+                            value_data['start_time'] = convert_datetime_to_timezone(
+                                value_data['start_time'], timezone_name)
+                            value_data['end_time'] = convert_datetime_to_timezone(
+                                value_data['end_time'], timezone_name)
 
-                        results[str(value)] = data
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['start_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['start_time'], timezone_name)
+                                value_data['comparison']['end_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['end_time'], timezone_name)
+                        else:
+                            value_data['first_game_time'] = convert_datetime_to_timezone(
+                                value_data['first_game_time'], timezone_name)
+                            value_data['last_game_time'] = convert_datetime_to_timezone(
+                                value_data['last_game_time'], timezone_name)
+
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['first_game_time'], timezone_name)
+                                value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['last_game_time'], timezone_name)
 
                     # Return the response
                     response_data = {
@@ -570,6 +597,7 @@ async def get_exact_floor_occurrences_batch(request: web.Request) -> web.Respons
                         'data': {
                             'by_time': by_time,
                             'params': {'hours': hours} if by_time else {'games': games},
+                            'comparison': comparison,
                             'results': results
                         },
                         'cached_at': int(time.time())
@@ -604,6 +632,7 @@ async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Res
             "games": int,            # Optional: Number of games to analyze (default: 100)
             "hours": int,            # Optional: Number of hours to analyze
             "by_time": bool          # Optional: Whether to analyze by time (default: false)
+            "comparison": bool       # Optional: Whether to include comparison with previous period (default: true)
         }
 
     Headers:
@@ -632,6 +661,8 @@ async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Res
 
                 # Check if analysis should be by time
                 by_time = body.get('by_time', False)
+                # Get comparison parameter
+                comparison = body.get('comparison', True)
 
                 # Get parameters with defaults
                 if by_time:
@@ -649,32 +680,42 @@ async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Res
                 # Get database and session
                 db = Database()
                 async with db as session:
-                    # Get occurrences for each value
-                    results = {}
+                    # Get occurrences for each value with comparison data
+                    if by_time:
+                        results = await db.run_sync(
+                            occurrences.get_max_crash_point_occurrences_by_time_batch,
+                            values, hours, comparison
+                        )
+                    else:
+                        results = await db.run_sync(
+                            occurrences.get_max_crash_point_occurrences_by_games_batch,
+                            values, games, comparison
+                        )
 
-                    for value in values:
+                    # Convert datetime values to the requested timezone
+                    for value_data in results.values():
                         if by_time:
-                            data = await db.run_sync(
-                                occurrences.get_max_crash_point_occurrences_by_time,
-                                value, hours
-                            )
-                            # Convert datetime values
-                            data['start_time'] = convert_datetime_to_timezone(
-                                data['start_time'], timezone_name)
-                            data['end_time'] = convert_datetime_to_timezone(
-                                data['end_time'], timezone_name)
-                        else:
-                            data = await db.run_sync(
-                                occurrences.get_max_crash_point_occurrences_by_games,
-                                value, games
-                            )
-                            # Convert datetime values
-                            data['first_game_time'] = convert_datetime_to_timezone(
-                                data['first_game_time'], timezone_name)
-                            data['last_game_time'] = convert_datetime_to_timezone(
-                                data['last_game_time'], timezone_name)
+                            value_data['start_time'] = convert_datetime_to_timezone(
+                                value_data['start_time'], timezone_name)
+                            value_data['end_time'] = convert_datetime_to_timezone(
+                                value_data['end_time'], timezone_name)
 
-                        results[str(value)] = data
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['start_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['start_time'], timezone_name)
+                                value_data['comparison']['end_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['end_time'], timezone_name)
+                        else:
+                            value_data['first_game_time'] = convert_datetime_to_timezone(
+                                value_data['first_game_time'], timezone_name)
+                            value_data['last_game_time'] = convert_datetime_to_timezone(
+                                value_data['last_game_time'], timezone_name)
+
+                            if comparison and 'comparison' in value_data:
+                                value_data['comparison']['first_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['first_game_time'], timezone_name)
+                                value_data['comparison']['last_game_time'] = convert_datetime_to_timezone(
+                                    value_data['comparison']['last_game_time'], timezone_name)
 
                     # Return the response
                     response_data = {
@@ -682,6 +723,7 @@ async def get_max_crash_point_occurrences_batch(request: web.Request) -> web.Res
                         'data': {
                             'by_time': by_time,
                             'params': {'hours': hours} if by_time else {'games': games},
+                            'comparison': comparison,
                             'results': results
                         },
                         'cached_at': int(time.time())
