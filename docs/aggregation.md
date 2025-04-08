@@ -25,10 +25,10 @@
   ```
 
 - **Time-Series Data (Intervals):**  
-  Consider a sorted set or a hash mapping time bucket identifiers (or “bucket start” timestamps) to a serialized JSON object that includes the count and any relevant timestamps. For example:  
+  Consider a sorted set or a hash mapping time bucket identifiers (or "bucket start" timestamps) to a serialized JSON object that includes the count and any relevant timestamps. For example:  
 
   ```text
-  analytics:intervals:min:<value> => hash field with keys as “bucket_<timestamp>” and values as JSON { count, total_games }.
+  analytics:intervals:min:<value> => hash field with keys as "bucket_<timestamp>" and values as JSON { count, total_games }.
   ```
 
 - **Sequential Patterns (Series):**  
@@ -57,7 +57,7 @@ Perform incremental updates every time a new game is processed so that aggregate
 
 1. **New Game Processing Callback:**  
    In your main game processing (likely in the BCCrashMonitor callback), add a call to an aggregation update service. For every new game:
-   - Determine which aggregates (intervals, series, occurrences, last games) are affected based on the new game’s data.
+   - Determine which aggregates (intervals, series, occurrences, last games) are affected based on the new game's data.
    - For each analytic type, invoke the corresponding update logic.
 
 2. **Implement Helper Functions:**  
@@ -69,7 +69,7 @@ Perform incremental updates every time a new game is processed so that aggregate
      - Update the "total_games" counter and adjust timestamps accordingly.
 
    - **For Time-Series Data (Intervals):**
-     - Map the new game’s timestamp to its interval bucket (e.g., round to the nearest 10 minutes).
+     - Map the new game's timestamp to its interval bucket (e.g., round to the nearest 10 minutes).
      - Retrieve the existing bucket aggregate from Redis and update its count and total games.
 
    - **For Sequential Patterns (Series):**
@@ -77,7 +77,7 @@ Perform incremental updates every time a new game is processed so that aggregate
      - Update the corresponding series structure or push a new series object.
 
    - **For Last Games:**
-     - Compare the new game with the current stored value (if any) and update if it’s more recent or meets the criteria.
+     - Compare the new game with the current stored value (if any) and update if it's more recent or meets the criteria.
 
 3. **Atomicity:**  
    - **Transaction Support:**  
@@ -159,3 +159,108 @@ Perform incremental updates every time a new game is processed so that aggregate
 ---
 
 By following this plan, you will be able to update analytics once per new game event, store the results in Redis, and serve real-time precomputed analytics to users with minimal computation per API request. This approach not only improves performance and reduces load on your database but also provides a robust, scalable solution for delivering real-time analytics.
+
+## Implementation Checklist
+
+### 1. Aggregate Identification and Data Structures
+
+- [ ] Define all threshold values for different aggregate types
+- [ ] Implement Redis data structures for simple counters (occurrences)
+  - [ ] Create hash structures with fields for count, total_games, and timestamps
+  - [ ] Define key naming convention: `analytics:occurrences:min:<value>`
+- [ ] Implement time-series data structures (intervals)
+  - [ ] Create hash structures with bucket timestamps as keys
+  - [ ] Define key naming convention: `analytics:intervals:min:<value>`
+- [ ] Implement sequential pattern structures (series)
+  - [ ] Design structure to store series objects with start_game, end_game, length
+  - [ ] Define key naming convention: `analytics:series:min:<value>`
+- [ ] Implement last games structures
+  - [ ] Create structure to store most recent game details per threshold
+  - [ ] Define key naming convention: `analytics:last_game:min:<value>`
+- [ ] Test each data structure with sample data
+
+### 2. Incremental Update Logic
+
+- [ ] Create central aggregation update service/module
+- [ ] Implement new game processing callback integration
+  - [ ] Add hook in BCCrashMonitor callback to trigger aggregation updates
+  - [ ] Ensure processing happens exactly once per game event
+- [ ] Develop helper functions for each aggregate type:
+  - [ ] Simple counter (occurrences) update logic
+    - [ ] Read current counter from Redis
+    - [ ] Increment count if new game meets threshold
+    - [ ] Update total_games counter and timestamps
+  - [ ] Time-series (intervals) update logic
+    - [ ] Map game timestamp to correct interval bucket
+    - [ ] Update existing bucket aggregate or create new one
+  - [ ] Sequential patterns (series) update logic
+    - [ ] Determine if new game continues or ends existing series
+    - [ ] Update or create series objects accordingly
+  - [ ] Last games update logic
+    - [ ] Compare new game with stored value and update if needed
+- [ ] Implement Redis transactions for atomic updates
+  - [ ] Use MULTI/EXEC or Lua scripting for consistency
+- [ ] Add version/timestamp tracking for cache consistency
+  - [ ] Create global version key in Redis
+  - [ ] Update version with each new game event
+  - [ ] Include version in aggregate keys
+
+### 3. Integrating with Existing Routes and Services
+
+- [ ] Modify analytics routes to use precomputed results
+  - [ ] Update intervals.py to read from Redis
+  - [ ] Update series.py to read from Redis
+  - [ ] Update occurrences.py to read from Redis
+  - [ ] Update last_games.py to read from Redis
+- [ ] Implement fallback handlers for cache misses
+  - [ ] Create recomputation logic for missing aggregates
+  - [ ] Add database fallback when Redis is unavailable
+- [ ] Create utility functions for Redis operations
+  - [ ] Standardized cache key generation
+  - [ ] Serialization/deserialization helpers
+  - [ ] Transaction handling utilities
+
+### 4. Testing and Validation
+
+- [ ] Write unit tests for each helper function
+  - [ ] Test occurrences update logic
+  - [ ] Test intervals update logic
+  - [ ] Test series update logic
+  - [ ] Test last games update logic
+- [ ] Create integration tests for complete update flow
+  - [ ] Simulate stream of game events
+  - [ ] Verify Redis keys reflect expected aggregates
+- [ ] Test API endpoints with precomputed values
+  - [ ] Verify returned analytics match expected values
+  - [ ] Test performance improvements vs. on-demand calculation
+- [ ] Validate multi-instance behavior
+  - [ ] Test version-based cache consistency across instances
+  - [ ] Verify all instances serve consistent analytics
+
+### 5. Deployment and Monitoring
+
+- [ ] Implement phased rollout strategy
+  - [ ] Start with non-critical analytics endpoints
+  - [ ] Monitor key metrics during rollout
+- [ ] Set up monitoring dashboards
+  - [ ] Redis memory usage tracking
+  - [ ] Cache hit/miss rate monitoring
+  - [ ] API response latency measurement
+- [ ] Add logging for critical Redis operations
+  - [ ] Log update operations on aggregates
+  - [ ] Track performance metrics
+- [ ] Configure alerting for anomalies
+  - [ ] Set thresholds for cache miss rates
+  - [ ] Monitor Redis memory usage
+- [ ] Fine-tune TTLs and versioning based on usage
+  - [ ] Analyze actual usage patterns
+  - [ ] Adjust TTLs for optimal performance
+  - [ ] Consider debounce mechanisms if updates too frequent
+
+### 6. Documentation and Knowledge Sharing
+
+- [ ] Update API documentation to reflect caching behavior
+- [ ] Document Redis key schema and data structures
+- [ ] Create runbooks for common operational tasks
+- [ ] Document failure scenarios and recovery procedures
+- [ ] Prepare knowledge-sharing sessions for the team
