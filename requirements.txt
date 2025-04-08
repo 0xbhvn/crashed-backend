@@ -6,7 +6,7 @@ alembic>=1.14.1
 psycopg2-binary>=2.9.9  # Required for PostgreSQL support in SQLAlchemy
 asyncio>=3.4.3
 pytz>=2025.1
-redis>=5.0.0  # Required for Redis caching and real-time analytics
+redis>=5.0.1  # Required for Redis 7.4 support with field-level expiration
 
 # Development dependencies (uncomment for development)
 # pytest>=7.4.0
