@@ -287,11 +287,16 @@ def get_min_crash_point_intervals_by_game_sets(
             interval_end = current_interval_start + games_per_set - 1
             interval_key = f"{current_interval_start}-{interval_end}"
 
+            # Mark the current interval (containing highest_game_id) as in-progress
+            is_current_interval = (
+                highest_interval_start == current_interval_start)
+
             game_intervals[interval_key] = {
                 'set_id': set_id,
                 'start_game': current_interval_start,
                 'end_game': interval_end,
-                'games': []
+                'games': [],
+                'is_current_interval': is_current_interval
             }
 
             # Move to the previous interval
@@ -347,7 +352,21 @@ def get_min_crash_point_intervals_by_game_sets(
             interval_games = interval_data['games']
             matching_games = len(
                 [g for g in interval_games if g.crashPoint >= min_crash_point])
-            total_interval_games = len(interval_games)
+
+            # For completed intervals, total_games should be the full interval size
+            # For the current (most recent) interval, use actual count from the database
+            if interval_data['is_current_interval']:
+                total_interval_games = len(interval_games)
+            else:
+                # For past intervals that should be complete, use the full interval size
+                total_interval_games = games_per_set
+
+                # Calculate the adjusted matching_games based on percentage from actual data
+                actual_games = len(interval_games)
+                if actual_games > 0:
+                    # Extrapolate the matching games to full interval size
+                    matching_percentage = matching_games / actual_games
+                    matching_games = round(matching_percentage * games_per_set)
 
             # Get the start and end times from the games in this interval
             if interval_games:
@@ -380,7 +399,9 @@ def get_min_crash_point_intervals_by_game_sets(
                 'end_game': interval_data['end_game'],
                 'count': matching_games,
                 'total_games': total_interval_games,
-                'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0
+                'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0,
+                'is_current_interval': interval_data['is_current_interval'],
+                'actual_games': len(interval_games)  # For debugging
             })
 
         return result
@@ -548,11 +569,16 @@ def get_min_crash_point_intervals_by_game_sets_batch(
             interval_end = current_interval_start + games_per_set - 1
             interval_key = f"{current_interval_start}-{interval_end}"
 
+            # Mark the current interval (containing highest_game_id) as in-progress
+            is_current_interval = (
+                highest_interval_start == current_interval_start)
+
             game_intervals[interval_key] = {
                 'set_id': set_id,
                 'start_game': current_interval_start,
                 'end_game': interval_end,
-                'games': []
+                'games': [],
+                'is_current_interval': is_current_interval
             }
 
             # Move to the previous interval
@@ -612,7 +638,22 @@ def get_min_crash_point_intervals_by_game_sets_batch(
                 interval_games = interval_data['games']
                 matching_games = len(
                     [g for g in interval_games if g.crashPoint >= value])
-                total_interval_games = len(interval_games)
+
+                # For completed intervals, total_games should be the full interval size
+                # For the current (most recent) interval, use actual count from the database
+                if interval_data['is_current_interval']:
+                    total_interval_games = len(interval_games)
+                else:
+                    # For past intervals that should be complete, use the full interval size
+                    total_interval_games = games_per_set
+
+                    # Calculate the adjusted matching_games based on percentage from actual data
+                    actual_games = len(interval_games)
+                    if actual_games > 0:
+                        # Extrapolate the matching games to full interval size
+                        matching_percentage = matching_games / actual_games
+                        matching_games = round(
+                            matching_percentage * games_per_set)
 
                 # Get the start and end times from the games in this interval
                 if interval_games:
@@ -644,7 +685,9 @@ def get_min_crash_point_intervals_by_game_sets_batch(
                     'end_game': interval_data['end_game'],
                     'count': matching_games,
                     'total_games': total_interval_games,
-                    'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0
+                    'percentage': (matching_games / total_interval_games) * 100 if total_interval_games > 0 else 0,
+                    'is_current_interval': interval_data['is_current_interval'],
+                    'actual_games': len(interval_games)  # For debugging
                 })
 
             # Add to result dictionary
