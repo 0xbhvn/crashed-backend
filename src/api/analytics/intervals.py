@@ -17,6 +17,22 @@ from ...db.models import CrashGame
 logger = logging.getLogger(__name__)
 
 
+def ensure_timezone_aware(dt: datetime) -> datetime:
+    """
+    Ensure a datetime has timezone information.
+    If the datetime is naive (no timezone), assume it's UTC.
+
+    Args:
+        dt: A datetime object
+
+    Returns:
+        A timezone-aware datetime object
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def get_min_crash_point_intervals_by_time(
     session: Session,
     min_value: float,
@@ -84,9 +100,18 @@ def get_min_crash_point_intervals_by_time(
             # Always use standard interval boundaries for all intervals
             current_interval_end = current_interval_start + interval_delta
 
+            # Ensure timezone awareness for comparison
+            tz_aware_current_interval_start = ensure_timezone_aware(
+                current_interval_start)
+            tz_aware_current_interval_end = ensure_timezone_aware(
+                current_interval_end)
+            tz_aware_analysis_end_time = ensure_timezone_aware(
+                analysis_end_time)
+
             # Count games in this interval
             interval_games = [
-                g for g in games if current_interval_start <= g.endTime < min(current_interval_end, analysis_end_time)]
+                g for g in games if tz_aware_current_interval_start <= ensure_timezone_aware(g.endTime) <
+                min(tz_aware_current_interval_end, tz_aware_analysis_end_time)]
             total_games = len(interval_games)
 
             # Count games with crash point >= min_value
@@ -178,10 +203,16 @@ def get_min_crash_point_intervals_by_date_range(
         while current_interval_start <= normalized_end_date:
             current_interval_end = current_interval_start + interval_delta
 
+            # Ensure timezone awareness for comparison
+            tz_aware_current_interval_start = ensure_timezone_aware(
+                current_interval_start)
+            tz_aware_current_interval_end = ensure_timezone_aware(
+                current_interval_end)
+
             # Filter games in this interval using Python instead of database queries
             interval_games = [
                 g for g in games
-                if current_interval_start <= g.endTime < current_interval_end
+                if tz_aware_current_interval_start <= ensure_timezone_aware(g.endTime) < tz_aware_current_interval_end
             ]
 
             total_games = len(interval_games)
@@ -335,11 +366,13 @@ def get_min_crash_point_intervals_by_game_sets(
         for interval_data in game_intervals.values():
             if interval_data['games']:
                 interval_games = sorted(
-                    interval_data['games'], key=lambda g: g.endTime)
-                if earliest_time is None or interval_games[0].endTime < earliest_time:
-                    earliest_time = interval_games[0].endTime
-                if latest_time is None or interval_games[-1].endTime > latest_time:
-                    latest_time = interval_games[-1].endTime
+                    interval_data['games'], key=lambda g: ensure_timezone_aware(g.endTime))
+                if earliest_time is None or ensure_timezone_aware(interval_games[0].endTime) < earliest_time:
+                    earliest_time = ensure_timezone_aware(
+                        interval_games[0].endTime)
+                if latest_time is None or ensure_timezone_aware(interval_games[-1].endTime) > latest_time:
+                    latest_time = ensure_timezone_aware(
+                        interval_games[-1].endTime)
 
         # If we couldn't find any time reference, use current time
         if earliest_time is None:
@@ -370,9 +403,9 @@ def get_min_crash_point_intervals_by_game_sets(
             if interval_games:
                 # Sort games by time for time range calculation
                 interval_games = sorted(
-                    interval_games, key=lambda g: g.endTime)
-                start_time = interval_games[0].endTime
-                end_time = interval_games[-1].endTime
+                    interval_games, key=lambda g: ensure_timezone_aware(g.endTime))
+                start_time = ensure_timezone_aware(interval_games[0].endTime)
+                end_time = ensure_timezone_aware(interval_games[-1].endTime)
             else:
                 # For intervals with no games, use estimated times
                 time_diff = latest_time - earliest_time
@@ -610,11 +643,13 @@ def get_min_crash_point_intervals_by_game_sets_batch(
         for interval_data in game_intervals.values():
             if interval_data['games']:
                 interval_games = sorted(
-                    interval_data['games'], key=lambda g: g.endTime)
-                if earliest_time is None or interval_games[0].endTime < earliest_time:
-                    earliest_time = interval_games[0].endTime
-                if latest_time is None or interval_games[-1].endTime > latest_time:
-                    latest_time = interval_games[-1].endTime
+                    interval_data['games'], key=lambda g: ensure_timezone_aware(g.endTime))
+                if earliest_time is None or ensure_timezone_aware(interval_games[0].endTime) < earliest_time:
+                    earliest_time = ensure_timezone_aware(
+                        interval_games[0].endTime)
+                if latest_time is None or ensure_timezone_aware(interval_games[-1].endTime) > latest_time:
+                    latest_time = ensure_timezone_aware(
+                        interval_games[-1].endTime)
 
         # If we couldn't find any time reference, use current time
         if earliest_time is None:
@@ -649,9 +684,11 @@ def get_min_crash_point_intervals_by_game_sets_batch(
                 if interval_games:
                     # Sort games by time for time range calculation
                     interval_games = sorted(
-                        interval_games, key=lambda g: g.endTime)
-                    start_time = interval_games[0].endTime
-                    end_time = interval_games[-1].endTime
+                        interval_games, key=lambda g: ensure_timezone_aware(g.endTime))
+                    start_time = ensure_timezone_aware(
+                        interval_games[0].endTime)
+                    end_time = ensure_timezone_aware(
+                        interval_games[-1].endTime)
                 else:
                     # For intervals with no games, use estimated times
                     time_diff = latest_time - earliest_time
