@@ -53,8 +53,11 @@ def calculate_crash_probability(crash_point: float, games_since: int = 0) -> flo
         adjustment_factor = 1.0 + (games_since * 0.01)
         adjusted_prob = exact_prob * adjustment_factor
 
-        # Cap at reasonable maximum
-        return min(adjusted_prob, 99.0)
+        # Cap at reasonable maximum and convert to percentage (0-100)
+        result = min(adjusted_prob, 99.0) * 100
+
+        # Round to 2 decimal places for cleaner values
+        return round(result, 2)
     except Exception as e:
         logger.error(f"Error calculating crash probability: {str(e)}")
         return 0.0
