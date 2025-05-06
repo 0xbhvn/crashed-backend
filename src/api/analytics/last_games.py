@@ -19,35 +19,36 @@ logger = logging.getLogger(__name__)
 
 def calculate_crash_probability(crash_point: float, games_since: int = 0) -> float:
     """
-    Calculate the probability of a crash point occurring based on BC.games distribution.
+    Calculate the cumulative probability of a crash point occurring on the next game,
+    based on the BC.games distribution and the number of games since it last occurred.
 
-    The base probability for crash point X is approximately 99/X percent.
-    This increases slightly with each game that doesn't produce this crash point.
+    The formula uses a geometric distribution model:
+    - Base probability (p) for crash point X is 99/X (BC.games distribution)
+    - Probability of occurrence by the nth game is 1-(1-p)^n
+    - We calculate for the next game (games_since + 1)
 
     Args:
-        crash_point: The crash point to calculate probability for
+        crash_point: The crash point to calculate probability for (e.g., 10x)
         games_since: Number of games since this crash point was last seen
 
     Returns:
-        Probability as a percentage (0-100)
+        Probability as a percentage (0-100) of seeing this crash point on the next game
     """
     try:
-        # Calculate the probability using BC.games distribution formula
+        # Calculate base probability (p) using BC.games distribution formula
         # For crash points ≥ X, probability is roughly 99/X percent
+        base_prob = min(99.0, 99.0 / crash_point) / \
+            100  # Convert to decimal (0-1)
 
-        # Base probability calculation (already in percentage form 0-100)
-        base_prob = min(99.0, 99.0 / crash_point)
+        # Calculate probability for the next game (games_since + 1)
+        # Using cumulative geometric distribution formula: 1-(1-p)^n
+        n = games_since + 1  # Next game will be n games after the last occurrence
 
-        # Adjust probability based on games since last occurrence
-        # Using a simple linear scaling factor
-        # Increase by up to 10% with increasing games_since
-        adjustment_factor = min(1.1, 1.0 + (games_since * 0.005))
-        adjusted_prob = base_prob * adjustment_factor
+        # Calculate cumulative probability
+        cumulative_prob = 1 - ((1 - base_prob) ** n)
 
-        # Cap at 99% maximum and round to 2 decimal places
-        result = min(adjusted_prob, 99.0)
-
-        return round(result, 2)
+        # Convert to percentage (0-100) and round to 2 decimal places
+        return round(cumulative_prob * 100, 2)
     except Exception as e:
         logger.error(f"Error calculating crash probability: {str(e)}")
         return 0.0
@@ -387,9 +388,9 @@ def get_last_game_max_crash_point(session: Session, max_value: float) -> Optiona
 
             game_dict = game.to_dict()
 
-            # Add probability information
+            # Add probability information using max crash probability calculation
             game_dict['probability'] = {
-                'value': calculate_crash_probability(max_value, games_since),
+                'value': calculate_max_crash_probability(max_value, games_since),
                 'games_since': games_since
             }
 
@@ -438,7 +439,7 @@ def get_last_games_max_crash_points(session: Session, values: List[float]) -> Di
 
                 # Add probability information
                 game_dict['probability'] = {
-                    'value': calculate_crash_probability(value, games_since),
+                    'value': calculate_max_crash_probability(value, games_since),
                     'games_since': games_since
                 }
 
@@ -452,3 +453,35 @@ def get_last_games_max_crash_points(session: Session, values: List[float]) -> Di
         logger.error(
             f"Error getting last games with max crash points: {str(e)}")
         raise
+
+
+def calculate_max_crash_probability(max_value: float, games_since: int = 0) -> float:
+    """
+    Calculate a simple probability estimate for a max crash point.
+
+    For max crash points (e.g., ≤ 2x), we use a simpler model since 
+    the geometric distribution isn't as applicable.
+
+    Args:
+        max_value: The maximum crash point to calculate probability for
+        games_since: Number of games since this crash point was last seen
+
+    Returns:
+        Probability as a percentage (0-100)
+    """
+    try:
+        # For max crash points, the probability is roughly:
+        # 1 - (99/X)/100 = (100 - 99/X)/100
+        base_prob = min(99.0, (100.0 - (99.0 / max_value))
+                        ) if max_value > 1 else 1.0
+
+        # Apply a small adjustment based on games_since
+        adjustment = min(10.0, games_since * 0.5)  # Maximum 10% adjustment
+
+        # Calculate final probability with adjustment
+        final_prob = min(99.0, base_prob + adjustment)
+
+        return round(final_prob, 2)
+    except Exception as e:
+        logger.error(f"Error calculating max crash probability: {str(e)}")
+        return 0.0
