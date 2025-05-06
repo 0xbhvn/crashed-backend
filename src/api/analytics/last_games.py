@@ -9,11 +9,55 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
+import math
 
 from ...db.models import CrashGame
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def calculate_crash_probability(crash_point: float, games_since: int = 0) -> float:
+    """
+    Calculate the probability of a crash point occurring based on BC.games distribution.
+
+    The base probability for crash point X is approximately 99/X² percent.
+    This increases slightly with each game that doesn't produce this crash point.
+
+    Args:
+        crash_point: The crash point to calculate probability for
+        games_since: Number of games since this crash point was last seen
+
+    Returns:
+        Probability as a percentage (0-100)
+    """
+    try:
+        # Base probability calculation using the inverse square distribution
+        # For crash points ≥ X, probability is roughly 99/X
+        # For exact crash point X, it's the difference between thresholds
+
+        # Calculate probability ceiling (≥ crash_point)
+        ceiling_prob = min(99.0, 99.0 / crash_point)
+
+        # Calculate probability floor (≥ crash_point + 1)
+        # This gives us the probability of the exact crash point
+        next_point = crash_point + 1.0
+        floor_prob = min(99.0, 99.0 / next_point)
+
+        # Exact probability is the difference
+        exact_prob = ceiling_prob - floor_prob
+
+        # Adjust probability based on games since last occurrence
+        # Using a simple linear scaling factor (can be adjusted)
+        # Increase by 1% per game
+        adjustment_factor = 1.0 + (games_since * 0.01)
+        adjusted_prob = exact_prob * adjustment_factor
+
+        # Cap at reasonable maximum
+        return min(adjusted_prob, 99.0)
+    except Exception as e:
+        logger.error(f"Error calculating crash probability: {str(e)}")
+        return 0.0
 
 
 def get_last_min_crash_point_games(session: Session, min_value: float, limit: int = 10) -> List[Dict[str, Any]]:
@@ -135,7 +179,15 @@ def get_last_game_min_crash_point(session: Session, min_value: float) -> Optiona
                 .filter(CrashGame.endTime > game.endTime)\
                 .scalar()
 
-            return game.to_dict(), games_since
+            game_dict = game.to_dict()
+
+            # Add probability information
+            game_dict['probability'] = {
+                'value': calculate_crash_probability(min_value, games_since),
+                'games_since': games_since
+            }
+
+            return game_dict, games_since
 
         return None
 
@@ -177,7 +229,22 @@ def get_last_game_exact_floor(session: Session, floor_value: int) -> Optional[Tu
                 .filter(CrashGame.endTime > game.endTime)\
                 .scalar()
 
-            return game.to_dict(), games_since
+            game_dict = game.to_dict()
+
+            # Add probability information for exact floors
+            # The probability range is between floor_value and floor_value+1
+            lower_bound = float(floor_value)
+            upper_bound = lower_bound + 1.0
+
+            # Calculate probability for this range
+            probability = calculate_crash_probability(lower_bound, games_since)
+
+            game_dict['probability'] = {
+                'value': probability,
+                'games_since': games_since
+            }
+
+            return game_dict, games_since
 
         return None
 
@@ -217,7 +284,16 @@ def get_last_games_min_crash_points(session: Session, values: List[float]) -> Di
                 games_since = session.query(func.count(CrashGame.gameId))\
                     .filter(CrashGame.endTime > game.endTime)\
                     .scalar()
-                results[value] = (game.to_dict(), games_since)
+
+                game_dict = game.to_dict()
+
+                # Add probability information
+                game_dict['probability'] = {
+                    'value': calculate_crash_probability(value, games_since),
+                    'games_since': games_since
+                }
+
+                results[value] = (game_dict, games_since)
             else:
                 results[value] = None
 
@@ -259,7 +335,20 @@ def get_last_games_exact_floors(session: Session, values: List[int]) -> Dict[int
                 games_since = session.query(func.count(CrashGame.gameId))\
                     .filter(CrashGame.endTime > game.endTime)\
                     .scalar()
-                results[value] = (game.to_dict(), games_since)
+
+                game_dict = game.to_dict()
+
+                # Add probability information for exact floors
+                lower_bound = float(value)
+                probability = calculate_crash_probability(
+                    lower_bound, games_since)
+
+                game_dict['probability'] = {
+                    'value': probability,
+                    'games_since': games_since
+                }
+
+                results[value] = (game_dict, games_since)
             else:
                 results[value] = None
 
@@ -303,7 +392,15 @@ def get_last_game_max_crash_point(session: Session, max_value: float) -> Optiona
                 .filter(CrashGame.endTime > game.endTime)\
                 .scalar()
 
-            return game.to_dict(), games_since
+            game_dict = game.to_dict()
+
+            # Add probability information
+            game_dict['probability'] = {
+                'value': calculate_crash_probability(max_value, games_since),
+                'games_since': games_since
+            }
+
+            return game_dict, games_since
 
         return None
 
@@ -343,7 +440,16 @@ def get_last_games_max_crash_points(session: Session, values: List[float]) -> Di
                 games_since = session.query(func.count(CrashGame.gameId))\
                     .filter(CrashGame.endTime > game.endTime)\
                     .scalar()
-                results[value] = (game.to_dict(), games_since)
+
+                game_dict = game.to_dict()
+
+                # Add probability information
+                game_dict['probability'] = {
+                    'value': calculate_crash_probability(value, games_since),
+                    'games_since': games_since
+                }
+
+                results[value] = (game_dict, games_since)
             else:
                 results[value] = None
 

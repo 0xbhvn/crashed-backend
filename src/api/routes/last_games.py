@@ -38,6 +38,7 @@ async def get_last_game_min_crash_point(request: web.Request) -> web.Response:
         JSON response containing:
         - game data
         - count of games since this game
+        - probability of getting this crash point next
     """
     try:
         # Define key builder function
@@ -81,7 +82,12 @@ async def get_last_game_min_crash_point(request: web.Request) -> web.Response:
                         'status': 'success',
                         'data': {
                             'game': game_data,
-                            'games_since': games_since
+                            'games_since': games_since,
+                            'probability': {
+                                'value': game_data.get('probability', {}).get('value', 0),
+                                'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
+                                'description': f"Estimated probability of a crash point ≥ {value}x occurring next"
+                            }
                         },
                         'cached_at': int(time.time())
                     }
@@ -115,6 +121,7 @@ async def get_last_game_exact_floor(request: web.Request) -> web.Response:
         JSON response containing:
         - game data
         - count of games since this game
+        - probability of getting this floor value next
     """
     try:
         # Define key builder function
@@ -158,7 +165,12 @@ async def get_last_game_exact_floor(request: web.Request) -> web.Response:
                         'status': 'success',
                         'data': {
                             'game': game_data,
-                            'games_since': games_since
+                            'games_since': games_since,
+                            'probability': {
+                                'value': game_data.get('probability', {}).get('value', 0),
+                                'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
+                                'description': f"Estimated probability of a crash point with floor {value} occurring next"
+                            }
                         },
                         'cached_at': int(time.time())
                     }
@@ -191,7 +203,8 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
         X-Timezone: Optional timezone for datetime values (e.g., 'America/New_York')
 
     Returns:
-        JSON response containing results for each value in the input list
+        JSON response containing results for each value in the input list,
+        including probability information
     """
     try:
         # Use our new utility function for hash-based keys
@@ -237,9 +250,18 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
                                     game_data['prepareTime'], timezone_name)
                                 game_data['beginTime'] = convert_datetime_to_timezone(
                                     game_data['beginTime'], timezone_name)
+
+                            probability_value = game_data.get(
+                                'probability', {}).get('value', 0)
+
                             processed_results[str(value)] = {
                                 'game': game_data,
-                                'games_since': games_since
+                                'games_since': games_since,
+                                'probability': {
+                                    'value': probability_value,
+                                    'formatted': f"{probability_value:.2f}%",
+                                    'description': f"Estimated probability of a crash point ≥ {value}x occurring next"
+                                }
                             }
                         else:
                             processed_results[str(value)] = None
@@ -411,7 +433,12 @@ async def get_last_game_max_crash_point(request: web.Request) -> web.Response:
                         'status': 'success',
                         'data': {
                             'game': game_data,
-                            'games_since': games_since
+                            'games_since': games_since,
+                            'probability': {
+                                'value': game_data.get('probability', {}).get('value', 0),
+                                'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
+                                'description': f"Estimated probability of a crash point ≤ {value}x occurring next"
+                            }
                         },
                         'cached_at': int(time.time())
                     }
@@ -492,7 +519,12 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
                                     game_data['beginTime'], timezone_name)
                             processed_results[str(value)] = {
                                 'game': game_data,
-                                'games_since': games_since
+                                'games_since': games_since,
+                                'probability': {
+                                    'value': game_data.get('probability', {}).get('value', 0),
+                                    'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
+                                    'description': f"Estimated probability of a crash point ≤ {value}x occurring next"
+                                }
                             }
                         else:
                             processed_results[str(value)] = None
