@@ -251,17 +251,18 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
                                 game_data['beginTime'] = convert_datetime_to_timezone(
                                     game_data['beginTime'], timezone_name)
 
+                            # Extract probability value from game data
                             probability_value = game_data.get(
                                 'probability', {}).get('value', 0)
+
+                            # Remove probability from game_data to avoid duplication
+                            if 'probability' in game_data:
+                                del game_data['probability']
 
                             processed_results[str(value)] = {
                                 'game': game_data,
                                 'games_since': games_since,
-                                'probability': {
-                                    'value': probability_value,
-                                    'formatted': f"{probability_value:.2f}%",
-                                    'description': f"Estimated probability of a crash point ≥ {value}x occurring next"
-                                }
+                                'probability': probability_value
                             }
                         else:
                             processed_results[str(value)] = None
@@ -429,16 +430,20 @@ async def get_last_game_max_crash_point(request: web.Request) -> web.Response:
                         game_data['beginTime'] = convert_datetime_to_timezone(
                             game_data['beginTime'], timezone_name)
 
+                    # Extract probability value from game data
+                    probability_value = game_data.get(
+                        'probability', {}).get('value', 0)
+
+                    # Remove probability from game_data to avoid duplication
+                    if 'probability' in game_data:
+                        del game_data['probability']
+
                     response_data = {
                         'status': 'success',
                         'data': {
                             'game': game_data,
                             'games_since': games_since,
-                            'probability': {
-                                'value': game_data.get('probability', {}).get('value', 0),
-                                'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
-                                'description': f"Estimated probability of a crash point ≤ {value}x occurring next"
-                            }
+                            'probability': probability_value
                         },
                         'cached_at': int(time.time())
                     }
@@ -517,14 +522,19 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
                                     game_data['prepareTime'], timezone_name)
                                 game_data['beginTime'] = convert_datetime_to_timezone(
                                     game_data['beginTime'], timezone_name)
+
+                            # Extract probability value from game data
+                            probability_value = game_data.get(
+                                'probability', {}).get('value', 0)
+
+                            # Remove probability from game_data to avoid duplication
+                            if 'probability' in game_data:
+                                del game_data['probability']
+
                             processed_results[str(value)] = {
                                 'game': game_data,
                                 'games_since': games_since,
-                                'probability': {
-                                    'value': game_data.get('probability', {}).get('value', 0),
-                                    'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
-                                    'description': f"Estimated probability of a crash point ≤ {value}x occurring next"
-                                }
+                                'probability': probability_value
                             }
                         else:
                             processed_results[str(value)] = None
