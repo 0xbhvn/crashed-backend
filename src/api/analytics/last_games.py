@@ -21,7 +21,7 @@ def calculate_crash_probability(crash_point: float, games_since: int = 0) -> flo
     """
     Calculate the probability of a crash point occurring based on BC.games distribution.
 
-    The base probability for crash point X is approximately 99/X² percent.
+    The base probability for crash point X is approximately 99/X percent.
     This increases slightly with each game that doesn't produce this crash point.
 
     Args:
@@ -32,31 +32,21 @@ def calculate_crash_probability(crash_point: float, games_since: int = 0) -> flo
         Probability as a percentage (0-100)
     """
     try:
-        # Base probability calculation using the inverse square distribution
-        # For crash points ≥ X, probability is roughly 99/X
-        # For exact crash point X, it's the difference between thresholds
+        # Calculate the probability using BC.games distribution formula
+        # For crash points ≥ X, probability is roughly 99/X percent
 
-        # Calculate probability ceiling (≥ crash_point)
-        ceiling_prob = min(99.0, 99.0 / crash_point)
-
-        # Calculate probability floor (≥ crash_point + 1)
-        # This gives us the probability of the exact crash point
-        next_point = crash_point + 1.0
-        floor_prob = min(99.0, 99.0 / next_point)
-
-        # Exact probability is the difference
-        exact_prob = ceiling_prob - floor_prob
+        # Base probability calculation (already in percentage form 0-100)
+        base_prob = min(99.0, 99.0 / crash_point)
 
         # Adjust probability based on games since last occurrence
-        # Using a simple linear scaling factor (can be adjusted)
-        # Increase by 1% per game
-        adjustment_factor = 1.0 + (games_since * 0.01)
-        adjusted_prob = exact_prob * adjustment_factor
+        # Using a simple linear scaling factor
+        # Increase by up to 10% with increasing games_since
+        adjustment_factor = min(1.1, 1.0 + (games_since * 0.005))
+        adjusted_prob = base_prob * adjustment_factor
 
-        # Cap at reasonable maximum and convert to percentage (0-100)
-        result = min(adjusted_prob, 99.0) * 100
+        # Cap at 99% maximum and round to 2 decimal places
+        result = min(adjusted_prob, 99.0)
 
-        # Round to 2 decimal places for cleaner values
         return round(result, 2)
     except Exception as e:
         logger.error(f"Error calculating crash probability: {str(e)}")
