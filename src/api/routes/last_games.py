@@ -42,7 +42,7 @@ async def get_last_game_min_crash_point(request: web.Request) -> web.Response:
     """
     try:
         # Define key builder function
-        key_builder = build_key_from_match_info("last_game:min", "value")
+        key_builder = build_key_from_match_info("last_game:min:v2", "value")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -209,7 +209,7 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
     try:
         # Use our new utility function for hash-based keys
         from ...utils.redis_cache import build_hash_based_key
-        key_builder = build_hash_based_key("last_games:min:batch")
+        key_builder = build_hash_based_key("last_games:min:batch:v2")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -394,7 +394,7 @@ async def get_last_game_max_crash_point(request: web.Request) -> web.Response:
     """
     try:
         # Define key builder function
-        key_builder = build_key_from_match_info("last_game:max", "value")
+        key_builder = build_key_from_match_info("last_game:max:v2", "value")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -481,7 +481,7 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
     try:
         # Use our new utility function for hash-based keys
         from ...utils.redis_cache import build_hash_based_key
-        key_builder = build_hash_based_key("last_games:max:batch")
+        key_builder = build_hash_based_key("last_games:max:batch:v2")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
