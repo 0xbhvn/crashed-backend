@@ -42,7 +42,7 @@ async def get_last_game_min_crash_point(request: web.Request) -> web.Response:
     """
     try:
         # Define key builder function
-        key_builder = build_key_from_match_info("last_game:min:v2", "value")
+        key_builder = build_key_from_match_info("last_game:min:v3", "value")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -210,7 +210,7 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
         # Use our new body-aware key builder
         from ...utils.redis_cache import build_hash_based_key_with_body
         key_builder = build_hash_based_key_with_body(
-            "last_games:min:batch:v3")  # Add version to force cache refresh
+            "last_games:min:batch:v4")  # Update version to force cache refresh
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -395,7 +395,7 @@ async def get_last_game_max_crash_point(request: web.Request) -> web.Response:
     """
     try:
         # Define key builder function
-        key_builder = build_key_from_match_info("last_game:max:v2", "value")
+        key_builder = build_key_from_match_info("last_game:max:v3", "value")
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -483,7 +483,7 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
         # Use our new body-aware key builder
         from ...utils.redis_cache import build_hash_based_key_with_body
         key_builder = build_hash_based_key_with_body(
-            "last_games:max:batch:v3")  # Add version to force cache refresh
+            "last_games:max:batch:v4")  # Update version to force cache refresh
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
