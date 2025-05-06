@@ -8,6 +8,7 @@ in API endpoint handlers, reducing code duplication.
 import json
 import logging
 import time
+import asyncio
 from typing import Dict, Any, Optional, Callable, Awaitable, Tuple
 
 from aiohttp import web
@@ -86,7 +87,7 @@ def cache_response(cache_key: str, response_data: Dict[str, Any], ttl: int = Non
 
 
 async def cached_endpoint(request: web.Request,
-                          key_builder: Callable[[web.Request], str],
+                          key_builder: Callable,
                           data_fetcher: Callable[[web.Request], Awaitable[Tuple[Dict[str, Any], bool]]],
                           ttl: int = None) -> web.Response:
     """
@@ -94,7 +95,7 @@ async def cached_endpoint(request: web.Request,
 
     Args:
         request: The aiohttp request object
-        key_builder: Function that builds a Redis key from the request
+        key_builder: Function that builds a Redis key from the request (can be async or sync)
         data_fetcher: Async function that generates the response data if not cached
                       Returns tuple of (response_data, success)
         ttl: Optional custom TTL for cache
@@ -102,8 +103,11 @@ async def cached_endpoint(request: web.Request,
     Returns:
         web.Response: JSON response with data from cache or freshly generated
     """
-    # Generate cache key
-    cache_key = key_builder(request)
+    # Generate cache key - support both async and sync key_builder functions
+    if asyncio.iscoroutinefunction(key_builder):
+        cache_key = await key_builder(request)
+    else:
+        cache_key = key_builder(request)
 
     # Check cache first
     cached_data = await get_cached_response(cache_key)
@@ -235,6 +239,64 @@ def build_hash_based_key(prefix: str) -> Callable[[web.Request], str]:
 
         except Exception as e:
             logger.error(f"Error building hash-based key: {str(e)}")
+            # Fallback to a timestamp-based key
+            return generate_analytics_key(f"{prefix}:error:{int(time.time())}")
+
+    return key_builder
+
+
+def build_hash_based_key_with_body(prefix: str) -> Callable[[web.Request], str]:
+    """
+    Create a key builder that incorporates the actual request body content into the key.
+    This is especially useful for POST endpoints that accept JSON data with different values
+    that should be cached separately.
+
+    Args:
+        prefix: Prefix for the analytics key (e.g., "last_games:min:batch")
+
+    Returns:
+        Function that builds a Redis key incorporating the request body
+    """
+    async def key_builder(request: web.Request) -> str:
+        try:
+            # Basic request information
+            method = request.method
+            endpoint_path = str(request.url.path)
+
+            # For POST requests with JSON content
+            if method == "POST" and 'application/json' in request.headers.get('Content-Type', '').lower():
+                try:
+                    # Get the actual body content
+                    body = await request.json()
+
+                    # If there's a 'values' field, use it to make the key unique
+                    if 'values' in body:
+                        # Sort values to ensure consistent keys regardless of order
+                        values = sorted(str(v) for v in body['values'])
+                        values_str = '-'.join(values)
+
+                        # Create a fingerprint incorporating the values
+                        from hashlib import md5
+                        body_hash = md5(values_str.encode()).hexdigest()[:12]
+                        return generate_analytics_key(f"{prefix}:values_{body_hash}")
+                except Exception as e:
+                    logger.error(
+                        f"Error processing request body for cache key: {str(e)}")
+
+            # Fallback to the basic hash method if we can't use the body
+            components = [method, endpoint_path]
+            if request.query_string:
+                components.append(request.query_string)
+
+            # Create a fingerprint
+            from hashlib import md5
+            components_str = ":".join(components)
+            fingerprint = md5(components_str.encode()).hexdigest()[:12]
+
+            return generate_analytics_key(f"{prefix}:{fingerprint}")
+
+        except Exception as e:
+            logger.error(f"Error building body-based hash key: {str(e)}")
             # Fallback to a timestamp-based key
             return generate_analytics_key(f"{prefix}:error:{int(time.time())}")
 

@@ -207,9 +207,10 @@ async def get_last_games_min_crash_points(request: web.Request) -> web.Response:
         including probability information
     """
     try:
-        # Use our new utility function for hash-based keys
-        from ...utils.redis_cache import build_hash_based_key
-        key_builder = build_hash_based_key("last_games:min:batch:v2")
+        # Use our new body-aware key builder
+        from ...utils.redis_cache import build_hash_based_key_with_body
+        key_builder = build_hash_based_key_with_body(
+            "last_games:min:batch:v3")  # Add version to force cache refresh
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
@@ -479,9 +480,10 @@ async def get_last_games_max_crash_points(request: web.Request) -> web.Response:
         JSON response containing results for each value in the input list
     """
     try:
-        # Use our new utility function for hash-based keys
-        from ...utils.redis_cache import build_hash_based_key
-        key_builder = build_hash_based_key("last_games:max:batch:v2")
+        # Use our new body-aware key builder
+        from ...utils.redis_cache import build_hash_based_key_with_body
+        key_builder = build_hash_based_key_with_body(
+            "last_games:max:batch:v3")  # Add version to force cache refresh
 
         # Define data fetcher function
         async def data_fetcher(req: web.Request) -> Tuple[Dict[str, Any], bool]:
