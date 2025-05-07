@@ -121,7 +121,6 @@ async def get_last_game_exact_floor(request: web.Request) -> web.Response:
         JSON response containing:
         - game data
         - count of games since this game
-        - probability of getting this floor value next
     """
     try:
         # Define key builder function
@@ -161,16 +160,12 @@ async def get_last_game_exact_floor(request: web.Request) -> web.Response:
                         game_data['beginTime'] = convert_datetime_to_timezone(
                             game_data['beginTime'], timezone_name)
 
+                    # Note: Probability data is intentionally not included for exact-floors
                     response_data = {
                         'status': 'success',
                         'data': {
                             'game': game_data,
-                            'games_since': games_since,
-                            'probability': {
-                                'value': game_data.get('probability', {}).get('value', 0),
-                                'formatted': f"{game_data.get('probability', {}).get('value', 0):.2f}%",
-                                'description': f"Estimated probability of a crash point with floor {value} occurring next"
-                            }
+                            'games_since': games_since
                         },
                         'cached_at': int(time.time())
                     }
@@ -349,6 +344,8 @@ async def get_last_games_exact_floors(request: web.Request) -> web.Response:
                                     game_data['prepareTime'], timezone_name)
                                 game_data['beginTime'] = convert_datetime_to_timezone(
                                     game_data['beginTime'], timezone_name)
+
+                            # Note: Probability data is intentionally not included for exact-floors
                             processed_results[str(value)] = {
                                 'game': game_data,
                                 'games_since': games_since
