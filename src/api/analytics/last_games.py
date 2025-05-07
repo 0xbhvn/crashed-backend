@@ -225,18 +225,7 @@ def get_last_game_exact_floor(session: Session, floor_value: int) -> Optional[Tu
 
             game_dict = game.to_dict()
 
-            # Add probability information for exact floors
-            # The probability range is between floor_value and floor_value+1
-            lower_bound = float(floor_value)
-            upper_bound = lower_bound + 1.0
-
-            # Calculate probability for this range
-            probability = calculate_crash_probability(lower_bound, games_since)
-
-            game_dict['probability'] = {
-                'value': probability,
-                'games_since': games_since
-            }
+            # Removed probability calculation for exact floors
 
             return game_dict, games_since
 
@@ -332,15 +321,7 @@ def get_last_games_exact_floors(session: Session, values: List[int]) -> Dict[int
 
                 game_dict = game.to_dict()
 
-                # Add probability information for exact floors
-                lower_bound = float(value)
-                probability = calculate_crash_probability(
-                    lower_bound, games_since)
-
-                game_dict['probability'] = {
-                    'value': probability,
-                    'games_since': games_since
-                }
+                # No longer add probability information for exact floors
 
                 results[value] = (game_dict, games_since)
             else:
