@@ -104,6 +104,8 @@ class BCCrashMonitor:
         if salt is None:
             salt = config.BC_GAME_SALT
 
+        print(f"Calculating crash point for seed: {seed} and salt: {salt}")
+
         # Generate the HMAC-SHA256 hash
         try:
             h = hmac.new(salt.encode(), bytes.fromhex(

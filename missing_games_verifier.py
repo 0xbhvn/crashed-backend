@@ -50,6 +50,14 @@ if not DATABASE_URL:
     raise ValueError(
         "DATABASE_URL environment variable is not set. Please check your .env file.")
 
+# Get BC_GAME_SALT from environment variables
+BC_GAME_SALT = os.getenv('BC_GAME_SALT')
+if not BC_GAME_SALT:
+    logger.warning(
+        "BC_GAME_SALT environment variable is not set. Calculations may be incorrect.")
+else:
+    logger.info(f"Using BC_GAME_SALT from environment: {BC_GAME_SALT[:10]}...")
+
 
 async def find_missing_ranges(db: Database) -> List[Tuple[int, int, int]]:
     """
@@ -323,8 +331,9 @@ def map_verified_games_to_ids(verified_games: List[Tuple[str, float]], range_sta
                 break
 
             # Calculate the crash point using our own algorithm to verify
+            # Explicitly pass the BC_GAME_SALT from environment
             calculated_point = BCCrashMonitor.calculate_crash_point(
-                seed=hash_value)
+                seed=hash_value, salt=BC_GAME_SALT)
 
             # Create game data dictionary
             game = {
