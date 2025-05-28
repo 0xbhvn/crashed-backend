@@ -17,6 +17,74 @@ from ...db.models import CrashGame
 logger = logging.getLogger(__name__)
 
 
+def _extend_games_for_complete_streaks(
+    session: Session,
+    games: List[CrashGame],
+    min_value: float,
+    max_extension: int = 500
+) -> List[CrashGame]:
+    """
+    Extend the games list backwards to ensure any partial streak at the beginning is complete.
+
+    Args:
+        session: SQLAlchemy session
+        games: List of games (should be ordered from oldest to newest)
+        min_value: Minimum crash point threshold
+        max_extension: Maximum number of additional games to fetch (safety limit)
+
+    Returns:
+        Extended list of games with complete streaks
+    """
+    if not games:
+        return games
+
+    # Check if the oldest game is part of an incomplete streak
+    oldest_game = games[0]
+    if oldest_game.crashPoint >= min_value:
+        # No extension needed - the oldest game ends a streak
+        return games
+
+    # Need to extend backwards to find the start of this streak
+    extended_games = []
+    current_oldest_time = oldest_game.endTime
+    extension_count = 0
+
+    while extension_count < max_extension:
+        # Fetch older games in batches
+        batch_size = min(100, max_extension - extension_count)
+        older_games = session.query(CrashGame)\
+            .filter(CrashGame.endTime < current_oldest_time)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(batch_size)\
+            .all()
+
+        if not older_games:
+            # No more older games available
+            break
+
+        # Reverse to get oldest first
+        older_games.reverse()
+
+        # Check each game from newest to oldest in this batch
+        for game in reversed(older_games):
+            extended_games.insert(0, game)
+            extension_count += 1
+
+            if game.crashPoint >= min_value:
+                # Found the end of the previous streak, we can stop extending
+                logger.info(
+                    f"Extended games list by {extension_count} games to complete partial streak")
+                return extended_games + games
+
+        # Update current_oldest_time for next iteration
+        current_oldest_time = older_games[0].endTime
+
+    # If we reach here, we hit the max_extension limit
+    logger.warning(
+        f"Hit max extension limit of {max_extension} games while completing streak")
+    return extended_games + games
+
+
 def get_series_without_min_crash_point_by_games(
     session: Session,
     min_value: float,
@@ -50,6 +118,9 @@ def get_series_without_min_crash_point_by_games(
 
         # Reverse the list to process from oldest to newest
         games.reverse()
+
+        # Extend games backwards to complete any partial streaks
+        games = _extend_games_for_complete_streaks(session, games, min_value)
 
         series_list = []
         current_series = None
@@ -193,6 +264,9 @@ def get_series_without_min_crash_point_by_time(
             .filter(CrashGame.endTime >= start_time)\
             .order_by(CrashGame.endTime)\
             .all()
+
+        # Extend games backwards to complete any partial streaks
+        games = _extend_games_for_complete_streaks(session, games, min_value)
 
         series_list = []
         current_series = None
