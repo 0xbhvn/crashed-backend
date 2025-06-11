@@ -46,6 +46,14 @@ from .intervals import (
     get_min_crash_point_intervals_by_date_range_batch
 )
 
+from .statistical_models import (
+    calculate_moving_averages,
+    calculate_volatility_indicators,
+    analyze_probability_distribution,
+    detect_streaks,
+    get_combined_statistical_analysis
+)
+
 # Export all imported functions
 __all__ = [
     # Last games analytics
@@ -83,5 +91,12 @@ __all__ = [
     'get_min_crash_point_intervals_by_time_batch',
     'get_min_crash_point_intervals_by_game_sets_batch',
     'get_min_crash_point_intervals_by_date_range',
-    'get_min_crash_point_intervals_by_date_range_batch'
+    'get_min_crash_point_intervals_by_date_range_batch',
+
+    # Statistical models analytics
+    'calculate_moving_averages',
+    'calculate_volatility_indicators',
+    'analyze_probability_distribution',
+    'detect_streaks',
+    'get_combined_statistical_analysis'
 ]
