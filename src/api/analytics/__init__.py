@@ -47,10 +47,10 @@ from .intervals import (
 )
 
 from .statistical_models import (
-    calculate_moving_averages,
-    calculate_volatility_indicators,
-    analyze_probability_distribution,
-    detect_streaks,
+    calculate_risk_adjusted_metrics,
+    detect_patterns_and_anomalies,
+    calculate_expected_values,
+    calculate_market_psychology_indicators,
     get_combined_statistical_analysis
 )
 
@@ -94,9 +94,9 @@ __all__ = [
     'get_min_crash_point_intervals_by_date_range_batch',
 
     # Statistical models analytics
-    'calculate_moving_averages',
-    'calculate_volatility_indicators',
-    'analyze_probability_distribution',
-    'detect_streaks',
+    'calculate_risk_adjusted_metrics',
+    'detect_patterns_and_anomalies',
+    'calculate_expected_values',
+    'calculate_market_psychology_indicators',
     'get_combined_statistical_analysis'
 ]
