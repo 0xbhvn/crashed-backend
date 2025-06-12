@@ -51,7 +51,11 @@ from .statistical_models import (
     detect_patterns_and_anomalies,
     calculate_expected_values,
     calculate_market_psychology_indicators,
-    get_combined_statistical_analysis
+    get_combined_statistical_analysis,
+    calculate_bayesian_probability_updates,
+    run_monte_carlo_simulations,
+    backtest_strategies,
+    calculate_multiplier_correlations
 )
 
 # Export all imported functions
@@ -98,5 +102,9 @@ __all__ = [
     'detect_patterns_and_anomalies',
     'calculate_expected_values',
     'calculate_market_psychology_indicators',
-    'get_combined_statistical_analysis'
+    'get_combined_statistical_analysis',
+    'calculate_bayesian_probability_updates',
+    'run_monte_carlo_simulations',
+    'backtest_strategies',
+    'calculate_multiplier_correlations'
 ]
