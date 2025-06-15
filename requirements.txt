@@ -7,6 +7,8 @@ psycopg2-binary>=2.9.9  # Required for PostgreSQL support in SQLAlchemy
 asyncio>=3.4.3
 pytz>=2025.1
 redis>=5.2.1  # Redis client for Redis 7.4 support with field-level expiration
+numpy==2.3.0
+scipy==1.15.3
 
 # Development dependencies (uncomment for development)
 # pytest>=7.4.0

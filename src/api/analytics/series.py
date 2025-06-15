@@ -17,6 +17,74 @@ from ...db.models import CrashGame
 logger = logging.getLogger(__name__)
 
 
+def _extend_games_for_complete_streaks(
+    session: Session,
+    games: List[CrashGame],
+    min_value: float,
+    max_extension: int = 500
+) -> List[CrashGame]:
+    """
+    Extend the games list backwards to ensure any partial streak at the beginning is complete.
+
+    Args:
+        session: SQLAlchemy session
+        games: List of games (should be ordered from oldest to newest)
+        min_value: Minimum crash point threshold
+        max_extension: Maximum number of additional games to fetch (safety limit)
+
+    Returns:
+        Extended list of games with complete streaks
+    """
+    if not games:
+        return games
+
+    # Check if the oldest game is part of an incomplete streak
+    oldest_game = games[0]
+    if oldest_game.crashPoint >= min_value:
+        # No extension needed - the oldest game ends a streak
+        return games
+
+    # Need to extend backwards to find the start of this streak
+    extended_games = []
+    current_oldest_time = oldest_game.endTime
+    extension_count = 0
+
+    while extension_count < max_extension:
+        # Fetch older games in batches
+        batch_size = min(100, max_extension - extension_count)
+        older_games = session.query(CrashGame)\
+            .filter(CrashGame.endTime < current_oldest_time)\
+            .order_by(desc(CrashGame.endTime))\
+            .limit(batch_size)\
+            .all()
+
+        if not older_games:
+            # No more older games available
+            break
+
+        # Reverse to get oldest first
+        older_games.reverse()
+
+        # Check each game from newest to oldest in this batch
+        for game in reversed(older_games):
+            extended_games.insert(0, game)
+            extension_count += 1
+
+            if game.crashPoint >= min_value:
+                # Found the end of the previous streak, we can stop extending
+                logger.info(
+                    f"Extended games list by {extension_count} games to complete partial streak")
+                return extended_games + games
+
+        # Update current_oldest_time for next iteration
+        current_oldest_time = older_games[0].endTime
+
+    # If we reach here, we hit the max_extension limit
+    logger.warning(
+        f"Hit max extension limit of {max_extension} games while completing streak")
+    return extended_games + games
+
+
 def get_series_without_min_crash_point_by_games(
     session: Session,
     min_value: float,
@@ -51,29 +119,17 @@ def get_series_without_min_crash_point_by_games(
         # Reverse the list to process from oldest to newest
         games.reverse()
 
+        # Extend games backwards to complete any partial streaks
+        games = _extend_games_for_complete_streaks(session, games, min_value)
+
         series_list = []
         current_series = None
-        current_follow_games = []
-        in_follow_streak = False
 
-        i = 0
-        while i < len(games):
-            game = games[i]
-
-            # If game has crash point < min_value, it's part of a series
+        for game in games:
             if game.crashPoint < min_value:
-                # If we were collecting follow streak games for a previous series
-                if in_follow_streak and current_follow_games and series_list:
-                    # Add the collected follow streak to the most recent series
-                    series_list[-1]['follow_streak'] = {
-                        'count': len(current_follow_games),
-                        'games': current_follow_games
-                    }
-                    current_follow_games = []
-                    in_follow_streak = False
-
-                # Start a new series if needed
+                # Game is part of a streak (crash point < min_value)
                 if current_series is None:
+                    # Start a new series
                     current_series = {
                         'start_game_id': game.gameId,
                         'start_time': game.endTime,
@@ -86,19 +142,17 @@ def get_series_without_min_crash_point_by_games(
                         }
                     }
                 else:
-                    # Extend the current series
+                    # Continue the current series
                     current_series['end_game_id'] = game.gameId
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
             else:
-                # Game with crash point >= min_value
+                # Game has crash point >= min_value
                 if current_series is not None:
-                    # Include this game in the current series (the following crash)
+                    # This game terminates the current series
                     current_series['end_game_id'] = game.gameId
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
-
-                    # Set the follow_streak to this game
                     current_series['follow_streak'] = {
                         'count': 1,
                         'games': [{
@@ -110,32 +164,10 @@ def get_series_without_min_crash_point_by_games(
 
                     series_list.append(current_series)
                     current_series = None
-                    in_follow_streak = False
-                    current_follow_games = []
-                else:
-                    # This is a standalone crash point >= min_value
-                    # Create a series with just this game
-                    standalone_series = {
-                        'start_game_id': game.gameId,
-                        'start_time': game.endTime,
-                        'end_game_id': game.gameId,
-                        'end_time': game.endTime,
-                        'length': 1,
-                        'follow_streak': {
-                            'count': 1,  # Set to 1 for the game itself
-                            'games': [{   # The follow streak is the current game
-                                'game_id': game.gameId,
-                                'crash_point': game.crashPoint,
-                                'time': game.endTime
-                            }]
-                        }
-                    }
+                # If current_series is None, this is just a standalone high crash point game
+                # We don't create a series for standalone high crash point games
 
-                    series_list.append(standalone_series)
-
-            i += 1
-
-        # Add the last series if it exists (will only happen if the last games are < min_value)
+        # Handle case where the last games are all < min_value (incomplete series)
         if current_series is not None:
             current_series['follow_streak'] = {
                 'count': 0,
@@ -194,29 +226,17 @@ def get_series_without_min_crash_point_by_time(
             .order_by(CrashGame.endTime)\
             .all()
 
+        # Extend games backwards to complete any partial streaks
+        games = _extend_games_for_complete_streaks(session, games, min_value)
+
         series_list = []
         current_series = None
-        current_follow_games = []
-        in_follow_streak = False
 
-        i = 0
-        while i < len(games):
-            game = games[i]
-
-            # If game has crash point < min_value, it's part of a series
+        for game in games:
             if game.crashPoint < min_value:
-                # If we were collecting follow streak games for a previous series
-                if in_follow_streak and current_follow_games and series_list:
-                    # Add the collected follow streak to the most recent series
-                    series_list[-1]['follow_streak'] = {
-                        'count': len(current_follow_games),
-                        'games': current_follow_games
-                    }
-                    current_follow_games = []
-                    in_follow_streak = False
-
-                # Start a new series if needed
+                # Game is part of a streak (crash point < min_value)
                 if current_series is None:
+                    # Start a new series
                     current_series = {
                         'start_game_id': game.gameId,
                         'start_time': game.endTime,
@@ -229,19 +249,17 @@ def get_series_without_min_crash_point_by_time(
                         }
                     }
                 else:
-                    # Extend the current series
+                    # Continue the current series
                     current_series['end_game_id'] = game.gameId
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
             else:
-                # Game with crash point >= min_value
+                # Game has crash point >= min_value
                 if current_series is not None:
-                    # Include this game in the current series (the following crash)
+                    # This game terminates the current series
                     current_series['end_game_id'] = game.gameId
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
-
-                    # Set the follow_streak to this game
                     current_series['follow_streak'] = {
                         'count': 1,
                         'games': [{
@@ -253,32 +271,10 @@ def get_series_without_min_crash_point_by_time(
 
                     series_list.append(current_series)
                     current_series = None
-                    in_follow_streak = False
-                    current_follow_games = []
-                else:
-                    # This is a standalone crash point >= min_value
-                    # Create a series with just this game
-                    standalone_series = {
-                        'start_game_id': game.gameId,
-                        'start_time': game.endTime,
-                        'end_game_id': game.gameId,
-                        'end_time': game.endTime,
-                        'length': 1,
-                        'follow_streak': {
-                            'count': 1,  # Set to 1 for the game itself
-                            'games': [{   # The follow streak is the current game
-                                'game_id': game.gameId,
-                                'crash_point': game.crashPoint,
-                                'time': game.endTime
-                            }]
-                        }
-                    }
+                # If current_series is None, this is just a standalone high crash point game
+                # We don't create a series for standalone high crash point games
 
-                    series_list.append(standalone_series)
-
-            i += 1
-
-        # Add the last series if it exists (will only happen if the last games are < min_value)
+        # Handle case where the last games are all < min_value (incomplete series)
         if current_series is not None:
             current_series['follow_streak'] = {
                 'count': 0,

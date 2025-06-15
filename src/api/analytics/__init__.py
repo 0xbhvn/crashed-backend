@@ -46,6 +46,18 @@ from .intervals import (
     get_min_crash_point_intervals_by_date_range_batch
 )
 
+from .statistical_models import (
+    calculate_risk_adjusted_metrics,
+    detect_patterns_and_anomalies,
+    calculate_expected_values,
+    calculate_market_psychology_indicators,
+    get_combined_statistical_analysis,
+    calculate_bayesian_probability_updates,
+    run_monte_carlo_simulations,
+    backtest_strategies,
+    calculate_multiplier_correlations
+)
+
 # Export all imported functions
 __all__ = [
     # Last games analytics
@@ -83,5 +95,16 @@ __all__ = [
     'get_min_crash_point_intervals_by_time_batch',
     'get_min_crash_point_intervals_by_game_sets_batch',
     'get_min_crash_point_intervals_by_date_range',
-    'get_min_crash_point_intervals_by_date_range_batch'
+    'get_min_crash_point_intervals_by_date_range_batch',
+
+    # Statistical models analytics
+    'calculate_risk_adjusted_metrics',
+    'detect_patterns_and_anomalies',
+    'calculate_expected_values',
+    'calculate_market_psychology_indicators',
+    'get_combined_statistical_analysis',
+    'calculate_bayesian_probability_updates',
+    'run_monte_carlo_simulations',
+    'backtest_strategies',
+    'calculate_multiplier_correlations'
 ]
