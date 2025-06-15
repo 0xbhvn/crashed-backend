@@ -210,8 +210,9 @@ def get_series_without_min_crash_point_by_time(
         - length: Number of games in the series (including the following crash)
         - start_time: Start time of the series
         - end_time: End time of the series
-        - games: List of games in the series
-        - follow_streak: Information about games after the series with crash points >= min_value
+        - start_game_id: ID of the first game in the series
+        - end_game_id: ID of the last game in the series
+        - crash_point: The crash point value that terminated the series (None if series is incomplete)
     """
     try:
         # Calculate the time threshold in UTC
@@ -240,11 +241,7 @@ def get_series_without_min_crash_point_by_time(
                         'start_time': game.endTime,
                         'end_game_id': game.gameId,
                         'end_time': game.endTime,
-                        'length': 1,
-                        'follow_streak': {
-                            'count': 0,
-                            'games': []
-                        }
+                        'length': 1
                     }
                 else:
                     # Continue the current series
@@ -258,26 +255,27 @@ def get_series_without_min_crash_point_by_time(
                     current_series['end_game_id'] = game.gameId
                     current_series['end_time'] = game.endTime
                     current_series['length'] += 1
-                    current_series['follow_streak'] = {
-                        'count': 1,
-                        'games': [{
-                            'game_id': game.gameId,
-                            'crash_point': game.crashPoint,
-                            'time': game.endTime
-                        }]
-                    }
+                    current_series['crash_point'] = game.crashPoint
 
                     series_list.append(current_series)
                     current_series = None
-                # If current_series is None, this is just a standalone high crash point game
-                # We don't create a series for standalone high crash point games
+                else:
+                    # This is a standalone high crash point game (no series below min_value before it)
+                    # Create a length-1 series for tracking purposes
+                    standalone_series = {
+                        'start_game_id': game.gameId,
+                        'start_time': game.endTime,
+                        'end_game_id': game.gameId,
+                        'end_time': game.endTime,
+                        'length': 1,
+                        'crash_point': game.crashPoint
+                    }
+                    series_list.append(standalone_series)
 
         # Handle case where the last games are all < min_value (incomplete series)
         if current_series is not None:
-            current_series['follow_streak'] = {
-                'count': 0,
-                'games': []
-            }
+            # No crash_point since series wasn't terminated by a high crash
+            current_series['crash_point'] = None
             series_list.append(current_series)
 
         # Sort the series list based on the specified criterion
