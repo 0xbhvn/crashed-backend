@@ -10,13 +10,13 @@ import sys
 import logging
 from pathlib import Path
 
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the project root directory to Python path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from aiohttp import web
 from src import config
 from src.api import setup_api
-from src.utils.env import load_env, get_env_var
+from src.utils.env import load_env
 from src.utils import configure_logging
 from src.utils.redis import setup_redis, is_redis_available
 from src.db.engine import Database

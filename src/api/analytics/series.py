@@ -123,7 +123,7 @@ def get_series_without_min_crash_point_by_games(
         # Extend games backwards to complete any partial streaks
         games = _extend_games_for_complete_streaks(session, games, min_value)
 
-        series_list = []
+        series_list: List[Dict[str, Any]] = []
         current_series = None
 
         for game in games:
@@ -228,7 +228,7 @@ def get_series_without_min_crash_point_by_time(
         # Extend games backwards to complete any partial streaks
         games = _extend_games_for_complete_streaks(session, games, min_value)
 
-        series_list = []
+        series_list: List[Dict[str, Any]] = []
         current_series = None
 
         for game in games:
