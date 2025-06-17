@@ -7,7 +7,6 @@ crash points above certain thresholds.
 
 from ...utils.redis_keys import get_cache_version
 import logging
-import json
 import time
 from typing import Dict, Any, Tuple
 from aiohttp import web
@@ -87,8 +86,6 @@ async def get_series_without_min_crash_point(request: web.Request) -> web.Respon
                             series['start_time'], timezone_name)
                         series['end_time'] = convert_datetime_to_timezone(
                             series['end_time'], timezone_name)
-
-                        # No need to convert follow_streak times anymore since we simplified the structure
 
                     # Return the response
                     response_data = {
