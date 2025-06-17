@@ -38,16 +38,19 @@ def _extend_games_for_complete_streaks(
     if not games:
         return games
 
-    # Check if the oldest game is part of an incomplete streak
     oldest_game = games[0]
-    if oldest_game.crashPoint >= min_value:
-        # No extension needed - the oldest game ends a streak
-        return games
-
-    # Need to extend backwards to find the start of this streak
+    
+    # We need to extend backwards in two cases:
+    # 1. If the oldest game has crashPoint < min_value (it's part of an incomplete streak)
+    # 2. If the oldest game has crashPoint >= min_value (it might be terminating a streak)
+    
     extended_games = []
     current_oldest_time = oldest_game.endTime
     extension_count = 0
+    
+    # For case 2: if oldest game has high crash point, we need to check if there are
+    # low crash point games before it that it's terminating
+    looking_for_streak_start = oldest_game.crashPoint >= min_value
 
     while extension_count < max_extension:
         # Fetch older games in batches
@@ -70,11 +73,23 @@ def _extend_games_for_complete_streaks(
             extended_games.insert(0, game)
             extension_count += 1
 
-            if game.crashPoint >= min_value:
-                # Found the end of the previous streak, we can stop extending
-                logger.info(
-                    f"Extended games list by {extension_count} games to complete partial streak")
-                return extended_games + games
+            if looking_for_streak_start:
+                # We're looking for low crash point games that our oldest game might be terminating
+                if game.crashPoint < min_value:
+                    # Found a low crash point game - need to continue to find the start of this streak
+                    looking_for_streak_start = False
+                # If we find another high crash point game, our original oldest game is standalone
+                elif extension_count > 1:  # Give it at least one game to check
+                    logger.info(
+                        f"Extended games list by {extension_count} games - oldest game is standalone")
+                    return extended_games + games
+            else:
+                # We're in a streak of low crash points, looking for the previous terminator
+                if game.crashPoint >= min_value:
+                    # Found the end of the previous streak, we can stop extending
+                    logger.info(
+                        f"Extended games list by {extension_count} games to complete partial streak")
+                    return extended_games + games
 
         # Update current_oldest_time for next iteration
         current_oldest_time = older_games[0].endTime
@@ -156,16 +171,18 @@ def get_series_without_min_crash_point_by_games(
                     current_series = None
                 else:
                     # This is a standalone high crash point game (no series below min_value before it)
-                    # Create a length-1 series for tracking purposes
-                    standalone_series = {
-                        'start_game_id': game.gameId,
-                        'start_time': game.endTime,
-                        'end_game_id': game.gameId,
-                        'end_time': game.endTime,
-                        'length': 1,
-                        'crash_point': game.crashPoint
-                    }
-                    series_list.append(standalone_series)
+                    # Only create a length-1 series if we're not at the beginning of our data window
+                    # (i.e., this is not the first game we're processing)
+                    if game != games[0]:
+                        standalone_series = {
+                            'start_game_id': game.gameId,
+                            'start_time': game.endTime,
+                            'end_game_id': game.gameId,
+                            'end_time': game.endTime,
+                            'length': 1,
+                            'crash_point': game.crashPoint
+                        }
+                        series_list.append(standalone_series)
 
         # Handle case where the last games are all < min_value (incomplete series)
         if current_series is not None:
@@ -261,16 +278,18 @@ def get_series_without_min_crash_point_by_time(
                     current_series = None
                 else:
                     # This is a standalone high crash point game (no series below min_value before it)
-                    # Create a length-1 series for tracking purposes
-                    standalone_series = {
-                        'start_game_id': game.gameId,
-                        'start_time': game.endTime,
-                        'end_game_id': game.gameId,
-                        'end_time': game.endTime,
-                        'length': 1,
-                        'crash_point': game.crashPoint
-                    }
-                    series_list.append(standalone_series)
+                    # Only create a length-1 series if we're not at the beginning of our data window
+                    # (i.e., this is not the first game we're processing)
+                    if game != games[0]:
+                        standalone_series = {
+                            'start_game_id': game.gameId,
+                            'start_time': game.endTime,
+                            'end_game_id': game.gameId,
+                            'end_time': game.endTime,
+                            'length': 1,
+                            'crash_point': game.crashPoint
+                        }
+                        series_list.append(standalone_series)
 
         # Handle case where the last games are all < min_value (incomplete series)
         if current_series is not None:
