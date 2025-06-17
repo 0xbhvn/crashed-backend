@@ -87,7 +87,6 @@ async def get_series_without_min_crash_point(request: web.Request) -> web.Respon
                         series['end_time'] = convert_datetime_to_timezone(
                             series['end_time'], timezone_name)
 
-
                     # Return the response
                     response_data = {
                         'status': 'success',
