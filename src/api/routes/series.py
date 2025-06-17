@@ -88,12 +88,7 @@ async def get_series_without_min_crash_point(request: web.Request) -> web.Respon
                         series['end_time'] = convert_datetime_to_timezone(
                             series['end_time'], timezone_name)
 
-                        # Also convert time values in follow_streak.games if they exist
-                        if 'follow_streak' in series and 'games' in series['follow_streak']:
-                            for game in series['follow_streak']['games']:
-                                if 'time' in game:
-                                    game['time'] = convert_datetime_to_timezone(
-                                        game['time'], timezone_name)
+                        # No need to convert follow_streak times anymore since we simplified the structure
 
                     # Return the response
                     response_data = {
@@ -188,12 +183,7 @@ async def get_series_without_min_crash_point_by_time(request: web.Request) -> we
                         series['end_time'] = convert_datetime_to_timezone(
                             series['end_time'], timezone_name)
 
-                        # Also convert time values in follow_streak.games if they exist
-                        if 'follow_streak' in series and 'games' in series['follow_streak']:
-                            for game in series['follow_streak']['games']:
-                                if 'time' in game:
-                                    game['time'] = convert_datetime_to_timezone(
-                                        game['time'], timezone_name)
+                        # No need to convert follow_streak times anymore since we simplified the structure
 
                     # Return the response
                     response_data = {
