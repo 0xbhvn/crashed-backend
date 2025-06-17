@@ -81,6 +81,7 @@ The development server includes all production features:
 ## Default Behavior
 
 For faster development startup, the following are **default**:
+
 - ✅ Skip polling (always)
 - ✅ Skip catchup (override with `--run-catchup`)
 - ✅ Hot reload enabled
