@@ -57,7 +57,7 @@ The development server includes all production features:
 - **Automatic Reload**: The server automatically restarts when you modify any Python file
 - **Database Connection**: Full database support if configured
 - **Redis Caching**: Redis support if enabled
-- **Initial Catchup**: Runs catchup on startup (unless --skip-catchup is used)
+- **Initial Catchup**: Runs catchup on startup when --run-catchup is used (skipped by default for faster startup)
 - **WebSocket Support**: Full WebSocket functionality
 - **API Routes**: All API endpoints available
 - **Development Mode**: Runs on port 8000 by default
