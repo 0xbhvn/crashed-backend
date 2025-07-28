@@ -44,6 +44,7 @@ temp/
 .dockerignore
 Dockerfile*
 docker-compose*.yml
+!docker-entrypoint.sh
 
 # Documentation
 docs/

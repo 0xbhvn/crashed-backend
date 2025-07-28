@@ -81,20 +81,6 @@ services:
       - ./logs:/app/logs
     command: python -m src.app monitor
 
-  # Optional: Run database migrations
-  migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/bc_crash_db"
-    command: python -m src.app migrate upgrade
-    profiles:
-      - migrate
-
 volumes:
   postgres_data:
   redis_data:

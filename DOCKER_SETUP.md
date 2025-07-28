@@ -34,7 +34,7 @@ This guide explains how to run the Crash Monitor application using Docker and Do
    - Build the application image
    - Start PostgreSQL database
    - Start Redis cache
-   - Run database migrations
+   - Automatically run database migrations on startup
    - Start the Crash Monitor application
 
 4. **Check service status**
@@ -62,10 +62,12 @@ docker compose logs -f
 docker compose logs -f crashed-backend
 ```
 
-### Run database migrations
+### Run database migrations manually
+
+Migrations run automatically on container startup, but if needed:
 
 ```bash
-docker compose run --rm migrate
+docker compose exec crashed-backend python -m src.app migrate upgrade
 ```
 
 ### Stop all services
