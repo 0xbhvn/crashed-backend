@@ -80,6 +80,11 @@ TIMEZONE = get_env_var('TIMEZONE', 'UTC')
 APP_NAME = get_env_var('APP_NAME', 'Crash Monitor')
 APP_VERSION = get_env_var('APP_VERSION', '0.2.0')
 
+# Logbook settings
+ANALYSIS_LOG_PATH = get_env_var('ANALYSIS_LOG_PATH', 'analysis_log.csv')
+GOOGLE_SHEETS_CREDENTIALS = get_env_var('GOOGLE_SHEETS_CREDENTIALS')
+GOOGLE_SHEETS_ID = get_env_var('GOOGLE_SHEETS_ID')
+
 
 def get_config():
     """
@@ -135,6 +140,7 @@ def reload_config():
     global CATCHUP_ENABLED, CATCHUP_PAGES, CATCHUP_BATCH_SIZE
     global TIMEZONE
     global APP_NAME, APP_VERSION
+    global ANALYSIS_LOG_PATH, GOOGLE_SHEETS_CREDENTIALS, GOOGLE_SHEETS_ID
 
     # API settings
     API_BASE_URL = get_env_var('API_BASE_URL', 'https://bc.fun')
@@ -192,6 +198,11 @@ def reload_config():
     # Application settings
     APP_NAME = get_env_var('APP_NAME', 'Crash Monitor')
     APP_VERSION = get_env_var('APP_VERSION', '0.2.0')
+
+    # Logbook settings
+    ANALYSIS_LOG_PATH = get_env_var('ANALYSIS_LOG_PATH', 'analysis_log.csv')
+    GOOGLE_SHEETS_CREDENTIALS = get_env_var('GOOGLE_SHEETS_CREDENTIALS')
+    GOOGLE_SHEETS_ID = get_env_var('GOOGLE_SHEETS_ID')
 
     # Log that config was reloaded
     logger = logging.getLogger('config')

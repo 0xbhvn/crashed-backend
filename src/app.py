@@ -5,7 +5,6 @@ This module serves as the main entry point for the application,
 initializing components and running the monitor.
 """
 
-import os
 import sys
 import asyncio
 import argparse
@@ -348,9 +347,9 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
                 append_game_report(
                     game_data,
                     analysis,
-                    csv_path=os.getenv('ANALYSIS_LOG_PATH', 'analysis_log.csv'),
-                    gs_credentials=os.getenv('GOOGLE_SHEETS_CREDENTIALS'),
-                    gs_sheet_id=os.getenv('GOOGLE_SHEETS_ID'),
+                    csv_path=config.ANALYSIS_LOG_PATH,
+                    gs_credentials=config.GOOGLE_SHEETS_CREDENTIALS,
+                    gs_sheet_id=config.GOOGLE_SHEETS_ID,
                 )
         except Exception as e:
             logger.error(f"Error logging analysis for game {game_id}: {e}")
