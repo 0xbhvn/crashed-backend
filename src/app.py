@@ -10,7 +10,7 @@ import sys
 import asyncio
 import argparse
 import logging
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from aiohttp import web
 import gc
 import math
@@ -18,8 +18,20 @@ import math
 # Import from local modules
 from . import config
 from .history import BCCrashMonitor
-from .utils import load_env, configure_logging, fetch_game_history, fetch_games_batch
-from .db import get_database, CrashGame, create_migration, upgrade_database, downgrade_database, show_migrations
+from .utils import (
+    load_env,
+    configure_logging,
+    fetch_games_batch,
+    append_game_report,
+)
+from .db import (
+    CrashGame,
+    create_migration,
+    upgrade_database,
+    downgrade_database,
+    show_migrations,
+)
+from .api import analytics
 from .utils.env import get_env_var
 from .utils.redis import setup_redis, is_redis_available, close_redis_connections
 
@@ -328,6 +340,21 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
         except Exception as e:
             logger.error(f"Error broadcasting game via WebSocket: {e}")
 
+        # Append detailed statistical analysis to log book
+        try:
+            if db:
+                with db.get_session() as session:
+                    analysis = analytics.get_combined_statistical_analysis(session)
+                append_game_report(
+                    game_data,
+                    analysis,
+                    csv_path=os.getenv('ANALYSIS_LOG_PATH', 'analysis_log.csv'),
+                    gs_credentials=os.getenv('GOOGLE_SHEETS_CREDENTIALS'),
+                    gs_sheet_id=os.getenv('GOOGLE_SHEETS_ID'),
+                )
+        except Exception as e:
+            logger.error(f"Error logging analysis for game {game_id}: {e}")
+
     # Register the callback with the monitor
     monitor.register_game_callback(log_game)
 
@@ -533,7 +560,7 @@ async def run_catchup(pages: int = 20, batch_size: int = 20,
 
         # Early exit if we found all specific game IDs
         if target_game_ids and len(target_game_ids) == saved_count:
-            logger.info(f"Found all specified game IDs, stopping catchup")
+            logger.info("Found all specified game IDs, stopping catchup")
             break
 
         # Move to the next batch
@@ -670,7 +697,7 @@ async def main() -> None:
 
     try:
         # Health check server for container readiness
-        health_check_task = asyncio.create_task(start_health_check_server())
+        asyncio.create_task(start_health_check_server())
 
         if args.command == "monitor":
             await run_monitor(

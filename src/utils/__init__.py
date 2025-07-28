@@ -7,6 +7,7 @@ This package contains utility functions and classes used throughout the applicat
 from .env import load_env, get_env_var
 from .logging import configure_logging, log_sensitive
 from .api import fetch_game_history, process_game_data, fetch_games_batch, APIError
+from .logbook import append_game_report
 
 __all__ = [
     # Environment
@@ -21,5 +22,8 @@ __all__ = [
     'fetch_game_history',
     'process_game_data',
     'fetch_games_batch',
-    'APIError'
+    'APIError',
+
+    # Logbook
+    'append_game_report'
 ]
