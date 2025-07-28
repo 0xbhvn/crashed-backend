@@ -39,7 +39,7 @@ def _append_to_csv(entry: Dict[str, Any], csv_path: str) -> None:
         # Pattern detection
         'anomaly_flag', 'z_score', 'dominant_pattern', 'pattern_cycle', 'anomaly_rate',
         # Market state
-        'market_states', 'risk_level', 'opportunity_score'
+        'market_states', 'risk_level', 'opportunity_score', 'trading_recommendations'
     ]
     
     with open(csv_path, 'a', newline='', encoding='utf-8') as csvfile:
@@ -53,12 +53,37 @@ def _append_to_google_sheet(entry: Dict[str, Any], credentials_path: str,
                             sheet_id: str, worksheet: str = 'Sheet1') -> None:
     if not gspread or not Credentials:
         raise RuntimeError('gspread is not installed')
-    creds = Credentials.from_service_account_file(
-        credentials_path,
-        scopes=['https://www.googleapis.com/auth/spreadsheets']
-    )
+    
+    # Handle credentials as either a file path or JSON string
+    if credentials_path.startswith('{'):
+        # It's a JSON string
+        import json
+        creds_dict = json.loads(credentials_path)
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+    else:
+        # It's a file path
+        creds = Credentials.from_service_account_file(
+            credentials_path,
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+    
     client = gspread.authorize(creds)
     sheet = client.open_by_key(sheet_id).worksheet(worksheet)
+    
+    # Check if sheet is empty and add headers if needed
+    try:
+        first_row = sheet.row_values(1)
+        if not first_row:  # Sheet is empty
+            headers = list(entry.keys())
+            sheet.append_row(headers, value_input_option='USER_ENTERED')
+    except Exception:
+        # If we can't read the first row, assume it's empty and add headers
+        headers = list(entry.keys())
+        sheet.append_row(headers, value_input_option='USER_ENTERED')
+    
     sheet.append_row(list(entry.values()), value_input_option='USER_ENTERED')
 
 
@@ -166,7 +191,10 @@ def append_game_report(game_data: Dict[str, Any], analysis: Dict[str, Any],
         # Market state
         'market_states': market_states_str,
         'risk_level': market_state.get('risk_level', 'Medium'),
-        'opportunity_score': market_state.get('opportunity_score', 50)
+        'opportunity_score': market_state.get('opportunity_score', 50),
+        
+        # Trading recommendations
+        'trading_recommendations': '; '.join(market_psych.get('trading_recommendations', ['Maintain normal betting strategy']))
     }
     
     try:
