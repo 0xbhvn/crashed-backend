@@ -198,7 +198,8 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
     dev_mode = get_env_var('ENVIRONMENT', '').lower() == 'development'
     # Use port 8000 for development, 3000 for production
     default_port = '8000' if dev_mode else '3000'
-    api_port = int(config.get_env_var('API_PORT', default_port))
+    # Railway provides PORT env var - prioritize it over everything else
+    api_port = int(get_env_var('PORT', config.get_env_var('API_PORT', default_port)))
 
     # Create API server
     api_runner = web.AppRunner(api_app)
@@ -340,30 +341,34 @@ async def run_monitor(skip_catchup: bool = False, skip_polling: bool = False) ->
             logger.error(f"Error broadcasting game via WebSocket: {e}")
 
         # Append detailed statistical analysis to log book
-        try:
-            if db:
-                with db.get_session() as session:
-                    analysis = analytics.get_combined_statistical_analysis(session)
-                append_game_report(
-                    game_data,
-                    analysis,
-                    csv_path=config.ANALYSIS_LOG_PATH,
-                    gs_credentials=config.GOOGLE_SHEETS_CREDENTIALS,
-                    gs_sheet_id=config.GOOGLE_SHEETS_ID,
-                )
-        except Exception as e:
-            logger.error(f"Error logging analysis for game {game_id}: {e}")
+        # Only run analysis every 10 games to avoid blocking the event loop
+        if game_id and int(game_id) % 10 == 0:
+            try:
+                if db:
+                    with db.get_session() as session:
+                        analysis = analytics.get_combined_statistical_analysis(session)
+                    append_game_report(
+                        game_data,
+                        analysis,
+                        csv_path=config.ANALYSIS_LOG_PATH,
+                        gs_credentials=config.GOOGLE_SHEETS_CREDENTIALS,
+                        gs_sheet_id=config.GOOGLE_SHEETS_ID,
+                    )
+            except Exception as e:
+                logger.error(f"Error logging analysis for game {game_id}: {e}")
 
     # Register the callback with the monitor
     monitor.register_game_callback(log_game)
 
     # Start the monitor (run forever)
     logger.info("Starting Crash Monitor")
-    await monitor.run()
-
-    # Cleanup on exit
-    await api_runner.cleanup()
-    logger.info("Crash Monitor stopped")
+    try:
+        # Run the monitor - this will block until interrupted
+        await monitor.run()
+    finally:
+        # Cleanup on exit
+        await api_runner.cleanup()
+        logger.info("Crash Monitor stopped")
 
 
 async def run_catchup(pages: int = 20, batch_size: int = 20,
