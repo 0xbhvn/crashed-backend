@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bc_crash_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  crashed-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database settings
+      DATABASE_ENABLED: "true"
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/bc_crash_db"
+      
+      # Redis settings
+      REDIS_ENABLED: "true"
+      REDIS_URL: "redis://redis:6379"
+      
+      # API settings
+      API_BASE_URL: "https://bc.fun"
+      API_HISTORY_ENDPOINT: "/api/game/bet/multi/history"
+      GAME_URL: "crash"
+      PAGE_SIZE: "50"
+      
+      # Monitoring settings
+      POLL_INTERVAL: "5"
+      RETRY_INTERVAL: "10"
+      MAX_HISTORY_SIZE: "1000"
+      
+      # Logging
+      LOG_LEVEL: "INFO"
+      
+      # Catchup settings
+      CATCHUP_ENABLED: "true"
+      CATCHUP_PAGES: "20"
+      CATCHUP_BATCH_SIZE: "10"
+      
+      # Application settings
+      ENVIRONMENT: "development"
+      APP_NAME: "Crash Monitor"
+      APP_VERSION: "0.2.0"
+      
+      # BC Game Salt (you should set this in .env file)
+      BC_GAME_SALT: "${BC_GAME_SALT}"
+    ports:
+      - "3000:3000"  # API port
+      - "8080:8080"  # Health check port
+    volumes:
+      - ./logs:/app/logs
+    command: python -m src.app monitor
+
+  # Optional: Run database migrations
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/bc_crash_db"
+    command: python -m src.app migrate upgrade
+    profiles:
+      - migrate
+
+volumes:
+  postgres_data:
+  redis_data:
