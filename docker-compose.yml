@@ -47,17 +47,22 @@ services:
       # Redis settings
       REDIS_ENABLED: "true"
       REDIS_URL: "redis://redis:6379"
+      REDIS_MAX_CONNECTIONS: "10"
+      REDIS_SOCKET_TIMEOUT: "5"
+      REDIS_CACHE_TTL_SHORT: "30"
+      REDIS_CACHE_TTL_LONG: "120"
       
       # API settings
       API_BASE_URL: "https://bc.fun"
       API_HISTORY_ENDPOINT: "/api/game/bet/multi/history"
       GAME_URL: "crash"
-      PAGE_SIZE: "50"
+      PAGE_SIZE: "10"
+      API_PORT: "8000"
       
       # Monitoring settings
       POLL_INTERVAL: "5"
       RETRY_INTERVAL: "10"
-      MAX_HISTORY_SIZE: "1000"
+      MAX_HISTORY_SIZE: "10"
       
       # Logging
       LOG_LEVEL: "INFO"
@@ -66,6 +71,9 @@ services:
       CATCHUP_ENABLED: "true"
       CATCHUP_PAGES: "20"
       CATCHUP_BATCH_SIZE: "10"
+      
+      # Timezone settings
+      TIMEZONE: "Asia/Kolkata"
       
       # Application settings
       ENVIRONMENT: "development"
