@@ -82,8 +82,13 @@ services:
       
       # BC Game Salt (you should set this in .env file)
       BC_GAME_SALT: "${BC_GAME_SALT}"
+      
+      # Logbook settings
+      ANALYSIS_LOG_PATH: "/app/logs/analysis_log.csv"
+      GOOGLE_SHEETS_CREDENTIALS: "${GOOGLE_SHEETS_CREDENTIALS}"
+      GOOGLE_SHEETS_ID: "${GOOGLE_SHEETS_ID}"
     ports:
-      - "3000:3000"  # API port
+      - "8000:8000"  # API port (host:container)
       - "8080:8080"  # Health check port
     volumes:
       - ./logs:/app/logs

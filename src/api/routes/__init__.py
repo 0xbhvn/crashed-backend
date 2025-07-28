@@ -19,6 +19,7 @@ from .occurrences import routes as occurrences_routes
 from .series import routes as series_routes
 from .intervals import routes as intervals_routes
 from .statistical_models import routes as statistical_models_routes
+from .logbook import routes as logbook_routes
 
 # Import Redis utilities
 from ...utils.redis import is_redis_available, get_redis_client
@@ -120,5 +121,6 @@ def setup_api_routes(app: web.Application) -> None:
     app.add_routes(series_routes)
     app.add_routes(intervals_routes)
     app.add_routes(statistical_models_routes)
+    app.add_routes(logbook_routes)
 
     logger.info("API routes configured")
